@@ -28,6 +28,14 @@ const ConfigSchema = z.object({
   QUEUE_EXPIRE_SECONDS: z.coerce.number().int().positive().default(120),
   // Reconciler poll interval (ms): outbox-delivery backstop + exhaustion → needs_review.
   RECONCILER_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  // Slice 003 AI pipeline. Default per-shop monthly AI cap (micros = millionths USD); $5 default.
+  DEFAULT_SHOP_BUDGET_MICROS: z.coerce.number().int().nonnegative().default(5_000_000),
+  // Estimated cost reserved per model call (micros). Settled to real cost after the call.
+  LLM_ESTIMATE_MICROS: z.coerce.number().int().positive().default(2_000),
+  // Real provider (D6) — optional; when set, the worker uses LiteLLM instead of the fake (B1).
+  LLM_BASE_URL: z.string().optional(),
+  LLM_MODEL: z.string().optional(),
+  LLM_API_KEY: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

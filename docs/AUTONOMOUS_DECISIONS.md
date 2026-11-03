@@ -66,3 +66,24 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   40). typecheck clean; dependency-cruiser clean (incl. new llm/budget/pipeline module boundaries).
 - **Unresolved/deferred**: 003 decision logic, one-question (I6) + reply resumption, worker wiring, and
   the real-provider run (B1). 004–008 not started.
+
+## Feature 003 — ai-pipeline (checkpoint 2 — functionally complete vs fake gateway)
+
+- **Built + tested:** decision logic (`decide.ts`: wrong-shop→needs_review, price→answered, delegation
+  →flagged general inspection, required-field + per-wheel checks); one follow-up question (I6) enforced
+  by `UNIQUE(request_id)` on `follow_ups`; reply resumption (`applyReply` + re-run) that resolves to
+  `extracted` or falls back to a flagged general inspection; `PipelineService` orchestration
+  (reserve→extract→validate+1 escalation retry→settle→decide→persist→state); two-stage worker wiring
+  (intake queue → pipeline queue) so 002 behavior is unchanged; held_budget at the cap; gateway
+  selection (Fake default, LiteLLM when `LLM_*` set).
+- **Decision — two pg-boss queues:** added `ai-pipeline` queue fed after intake reaches
+  `awaiting_pipeline`, rather than changing the 002 processor (keeps 002 tests valid; clean layering).
+  pg-boss remains the sole retry authority for both queues; both dead-letter → `needs_review`.
+- **Decision — reply billed as a new call:** reply extraction uses step `extract-reply` (distinct
+  receipt), i.e. a second legitimate model call; initial uses `extract`. Both reserve-then-settle.
+- **Verification:** `npx vitest run` → **63 passed / 63** (adds 7 pipeline + 7 decide + 4 extraction +
+  5 budget). typecheck + dependency-cruiser clean. **Live:** `make up` → submit → observed
+  `received → awaiting_pipeline → extracted` through the real two-stage worker + pg-boss + FakeGateway.
+- **Converged* (vs fake):** all planned 003 behavior built + tested. The ONLY outstanding 003 item is
+  the real-provider extraction run (blocker **B1**) and the live 40-sample eval/cost (008 + B1) — not
+  faked. `extracted` bridges to slice 004 (order creation + pricing).

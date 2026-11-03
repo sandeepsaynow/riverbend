@@ -20,3 +20,6 @@ export interface JobQueue {
 /** The intake processing queue, and its dead-letter queue (exhausted jobs land here). */
 export const INTAKE_QUEUE = 'intake-process';
 export const INTAKE_DLQ = 'intake-process-dlq';
+/** The AI-pipeline queue (slice 003), fed after intake reaches awaiting_pipeline. */
+export const PIPELINE_QUEUE = 'ai-pipeline';
+export const PIPELINE_DLQ = 'ai-pipeline-dlq';

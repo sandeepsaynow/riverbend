@@ -1,5 +1,7 @@
 import { PgBoss, type Job } from 'pg-boss';
-import { INTAKE_DLQ, INTAKE_QUEUE, type JobPayload, type JobQueue } from './index.js';
+import {
+  INTAKE_DLQ, INTAKE_QUEUE, PIPELINE_DLQ, PIPELINE_QUEUE, type JobPayload, type JobQueue,
+} from './index.js';
 
 export interface PgBossConfig {
   /** Owner/migrator connection — pg-boss creates and owns its `pgboss` schema here, not app_user. */
@@ -29,15 +31,21 @@ export class PgBossQueue implements JobQueue {
 
   async start(): Promise<void> {
     await this.boss.start();
-    // Dead-letter queue first (no retries; terminal), then the main queue routing to it.
+    // Dead-letter queues first (terminal), then each main queue routing to its DLQ.
     await this.boss.createQueue(INTAKE_DLQ);
-    await this.boss.createQueue(INTAKE_QUEUE, {
-      policy: 'standard',
-      retryLimit: this.retryLimit,
-      retryBackoff: true,
-      expireInSeconds: this.expireInSeconds,
-      deadLetter: INTAKE_DLQ,
-    });
+    await this.boss.createQueue(PIPELINE_DLQ);
+    for (const [queue, dlq] of [
+      [INTAKE_QUEUE, INTAKE_DLQ],
+      [PIPELINE_QUEUE, PIPELINE_DLQ],
+    ] as const) {
+      await this.boss.createQueue(queue, {
+        policy: 'standard',
+        retryLimit: this.retryLimit,
+        retryBackoff: true,
+        expireInSeconds: this.expireInSeconds,
+        deadLetter: dlq,
+      });
+    }
   }
 
   async stop(): Promise<void> {

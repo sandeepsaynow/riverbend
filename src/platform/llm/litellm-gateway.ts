@@ -7,9 +7,9 @@ import type { ExtractionInput, LlmGateway } from './index.js';
  * and secret. Until those are provided (blocker B1) this adapter refuses to run rather than pretend.
  */
 export interface LiteLlmConfig {
-  baseUrl?: string;
-  model?: string;
-  apiKey?: string;
+  baseUrl?: string | undefined;
+  model?: string | undefined;
+  apiKey?: string | undefined;
 }
 
 export class LiteLlmGateway implements LlmGateway {
