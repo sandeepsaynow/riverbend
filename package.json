@@ -1,0 +1,43 @@
+{
+  "name": "riverbend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Riverbend Cycles — multi-tenant work-order intake. Slice 001: foundation.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start:api": "tsx src/api/server.ts",
+    "start:worker": "tsx src/worker/index.ts",
+    "migrate": "tsx src/platform/db/migrate-cli.ts up",
+    "lint": "dependency-cruiser --config .dependency-cruiser.cjs src",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0",
+    "node-pg-migrate": "^7.9.0",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^10.16.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
+    "@types/pg": "^8.11.10",
+    "@types/supertest": "^6.0.2",
+    "dependency-cruiser": "^16.8.0",
+    "supertest": "^7.0.0",
+    "testcontainers": "^10.16.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

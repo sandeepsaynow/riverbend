@@ -1,0 +1,35 @@
+# One-command local run (FR-012). `make up` starts PostgreSQL + the api process;
+# the api applies migrations before serving (migrate-before-serve, FR-022).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: riverbend_migrator
+      POSTGRES_PASSWORD: mig_pw
+      POSTGRES_DB: riverbend
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U riverbend_migrator -d riverbend"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      DATABASE_URL: postgres://app_user:app_pw@db:5432/riverbend
+      DATABASE_ADMIN_URL: postgres://app_admin:admin_pw@db:5432/riverbend
+      DATABASE_MIGRATOR_URL: postgres://riverbend_migrator:mig_pw@db:5432/riverbend
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-dev-only-admin-secret-change-me}
+      LOG_LEVEL: info
+    ports:
+      - "8080:8080"
+    command: ["npm", "run", "start:api"]

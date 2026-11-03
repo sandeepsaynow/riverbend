@@ -1,0 +1,18 @@
+# gitleaks config (I7 / FR-015): no secret may ever be committed.
+# Uses the default rule set; allowlists only example/placeholder files that contain no real secrets.
+title = "Riverbend gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Non-secret example and documentation files"
+paths = [
+  '''\.env\.example$''',
+  '''docs/.*''',
+  '''specs/.*''',
+]
+regexes = [
+  '''replace-with-a-long-random-admin-secret''',
+  '''dev-only-admin-secret-change-me''',
+]

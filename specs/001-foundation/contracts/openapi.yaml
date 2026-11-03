@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: Riverbend — Foundation (001) HTTP Contract
+  version: 0.1.0
+  description: >
+    Foundation slice. No AI. Three route groups: health (unauthenticated),
+    admin provisioning (admin credential), and shop-scoped reads (shop credential).
+    Shop identity is always derived from the credential — never from a path or body.
+    This contract is the authority for /speckit-tasks; bodies/DDL are not defined here.
+
+servers:
+  - url: http://localhost:8080
+    description: Local one-command run (docker compose)
+
+tags:
+  - name: health
+  - name: admin
+  - name: shop
+
+components:
+  securitySchemes:
+    ShopApiKey:
+      type: http
+      scheme: bearer
+      description: A `kind=shop` credential. Carries the tenant identity.
+    AdminApiKey:
+      type: http
+      scheme: bearer
+      description: A `kind=admin` credential. Required for provisioning; rejected on shop routes.
+  schemas:
+    Shop:
+      type: object
+      required: [id, slug, time_zone, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, pattern: '^[a-z0-9-]{3,40}$' }
+        time_zone: { type: string, example: America/Chicago }
+        display_name: { type: string }
+        created_at: { type: string, format: date-time }
+    CreateShopRequest:
+      type: object
+      required: [slug, time_zone]
+      properties:
+        slug: { type: string, pattern: '^[a-z0-9-]{3,40}$' }
+        time_zone: { type: string, example: America/Chicago }
+        display_name: { type: string }
+    IssuedCredential:
+      type: object
+      description: The `secret` is returned exactly once and never retrievable again.
+      required: [id, kind, prefix, secret]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [shop] }
+        shop_id: { type: string, format: uuid }
+        prefix: { type: string }
+        secret: { type: string, description: Shown once; store securely. }
+        created_at: { type: string, format: date-time }
+    CatalogService:
+      type: object
+      required: [code, name, price_cents, minutes, requires_inspection]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        price_cents: { type: integer, minimum: 0, description: Whole cents (I5). }
+        minutes: { type: integer, minimum: 0 }
+        requires_inspection: { type: boolean }
+    Catalog:
+      type: object
+      required: [catalog_version, services]
+      properties:
+        catalog_version: { type: string }
+        services:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { $ref: '#/components/schemas/CatalogService' }
+    Ready:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ready] }
+    NotReady:
+      type: object
+      required: [status, reasons]
+      properties:
+        status: { type: string, enum: [not_ready] }
+        reasons:
+          type: array
+          items:
+            type: string
+            enum: [db_unreachable, migrations_pending, schema_incompatible, security_policy_missing]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        message: { type: string }
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness — the process is running.
+      security: []
+      responses:
+        '200':
+          description: Alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { status: { type: string, enum: [alive] } }
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness — reachable AND migrated/compatible AND configured AND isolation policies enforced (FR-013). Independent of liveness.
+      security: []
+      responses:
+        '200':
+          description: Ready.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Ready' } } }
+        '503':
+          description: Not ready (unreachable store or pending migrations).
+          content: { application/json: { schema: { $ref: '#/components/schemas/NotReady' } } }
+
+  /admin/shops:
+    post:
+      tags: [admin]
+      summary: Create a shop (FR-005/006). Admin credential required.
+      security: [{ AdminApiKey: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateShopRequest' } } }
+      responses:
+        '201':
+          description: Shop created.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Shop' } } }
+        '401': { description: Missing/invalid admin credential., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: A shop credential was used on an admin route (FR-020)., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Slug already in use., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: Invalid slug or time zone., content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/shops/{slug}/credentials:
+    post:
+      tags: [admin]
+      summary: Issue a shop credential (FR-007/008). Secret shown once. Admin credential required.
+      security: [{ AdminApiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: Credential issued; secret returned exactly once.
+          content: { application/json: { schema: { $ref: '#/components/schemas/IssuedCredential' } } }
+        '401': { description: Missing/invalid admin credential. }
+        '403': { description: Shop credential used on admin route (FR-020). }
+        '404': { description: No such shop. }
+
+  /admin/credentials/{id}/revoke:
+    post:
+      tags: [admin]
+      summary: Revoke one credential (FR-009); others keep working. Admin credential required.
+      security: [{ AdminApiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Revoked. }
+        '401': { description: Missing/invalid admin credential. }
+        '403': { description: Shop credential used on admin route (FR-020). }
+        '404': { description: No such credential. }
+
+  /v1/catalog:
+    get:
+      tags: [shop]
+      summary: Read the shared 12-service catalog (FR-016/017/018). Shop credential required.
+      security: [{ ShopApiKey: [] }]
+      responses:
+        '200':
+          description: The current catalog version with exactly 12 services.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Catalog' } } }
+        '401': { description: Missing/invalid shop credential. }
+        '403': { description: An admin credential was used on a shop route. }
+
+  /v1/shop:
+    get:
+      tags: [shop]
+      summary: Read the calling shop's own profile. Identity comes from the credential (D2).
+      security: [{ ShopApiKey: [] }]
+      responses:
+        '200':
+          description: The caller's own shop (never another shop's).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Shop' } } }
+        '401': { description: Missing/invalid shop credential. }
+        '403': { description: An admin credential was used on a shop route. }
