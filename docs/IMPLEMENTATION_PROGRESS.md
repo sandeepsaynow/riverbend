@@ -9,7 +9,7 @@ Updated as slices progress.
 |-------|------|------|-------|-------------|-------|-----------|-----------|
 | 001-foundation | ✅ | ✅ | 61/61 | ✅ | ✅ 27 | ✅ | ✅ `b6dd646` |
 | 002-intake-queue | ✅ | ✅ | 36/36 | ✅ | ✅ 13 | ✅ | ⏳ committing |
-| 003-ai-pipeline | ✅ | ✅ | checkpoint 1 | 🟡 partial | ✅ 9 (I3+I4) | — | ✅ `<003c1>` |
+| 003-ai-pipeline | ✅ | ✅ | checkpoint 1 | 🟡 partial | ✅ 9 (I3+I4) | — | ✅ `0e27f4c` |
 | 004-orders-staff | — | — | — | — | — | — | — |
 | 005-web-form | — | — | — | — | — | — | — |
 | 006-email | — | — | — | — | — | — | — |
