@@ -10,7 +10,7 @@ Updated as slices progress.
 | 001-foundation | ✅ | ✅ | 61/61 | ✅ | ✅ 27 | ✅ | ✅ `b6dd646` |
 | 002-intake-queue | ✅ | ✅ | 36/36 | ✅ | ✅ 13 | ✅ | ✅ `4df4cfd` |
 | 003-ai-pipeline | ✅ | ✅ | ✅ | ✅ (fake gateway) | ✅ 23 | ✅* | `b377d86` |
-| 004-orders-staff | ✅ | ✅ | ✅ | ✅ | ✅ 6 | ✅ | ⏳ committing |
+| 004-orders-staff | ✅ | ✅ | ✅ | ✅ | ✅ 6 | ✅ | `64233a9` |
 | 005-web-form | — | — | — | — | — | — | — |
 | 006-email | — | — | — | — | — | — | — |
 | 007-resilience | — | — | — | — | — | — | — |
