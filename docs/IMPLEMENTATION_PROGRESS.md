@@ -8,7 +8,7 @@ Updated as slices progress.
 | Slice | Spec | Plan | Tasks | Implemented | Tests | Converged | Committed |
 |-------|------|------|-------|-------------|-------|-----------|-----------|
 | 001-foundation | ✅ | ✅ | 61/61 | ✅ | ✅ 27 | ✅ | ✅ `b6dd646` |
-| 002-intake-queue | ✅ | ✅ | 36/36 | ✅ | ✅ 13 | ✅ | ⏳ committing |
+| 002-intake-queue | ✅ | ✅ | 36/36 | ✅ | ✅ 13 | ✅ | ✅ `4df4cfd` |
 | 003-ai-pipeline | ✅ | ✅ | checkpoint 1 | 🟡 partial | ✅ 9 (I3+I4) | — | ✅ `0e27f4c` |
 | 004-orders-staff | — | — | — | — | — | — | — |
 | 005-web-form | — | — | — | — | — | — | — |
