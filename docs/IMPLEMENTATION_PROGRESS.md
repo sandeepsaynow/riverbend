@@ -51,4 +51,6 @@ See [AUTONOMOUS_DECISIONS.md](./AUTONOMOUS_DECISIONS.md) for rationale.
 
 ## Current feature
 
-003-ai-pipeline checkpoint 1 committed. Next: 003 decision/one-question/worker wiring, then 004.
+001–004 complete + committed (69/69 tests, live-verified). 005–008 pending — see
+[AUTONOMOUS_HANDOFF.md](./AUTONOMOUS_HANDOFF.md) for exact next actions. Stopped at a session size
+limit, not a blocker.
