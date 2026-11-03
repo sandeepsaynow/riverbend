@@ -3,6 +3,7 @@ import type { LlmGateway } from '../../platform/llm/index.js';
 import { BudgetService } from '../budget/index.js';
 import { decide } from './decide.js';
 import { ExtractionInvalid, validateExtraction, type Extraction } from './schema.js';
+export { PER_WHEEL } from './decide.js';
 
 export interface PipelineOptions {
   defaultBudgetMicros: number;

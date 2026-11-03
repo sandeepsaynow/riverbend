@@ -8,6 +8,7 @@ import { AuthService } from '../modules/auth/index.js';
 import { ShopsService } from '../modules/shops/index.js';
 import { CatalogService } from '../modules/catalog/index.js';
 import { IntakeService } from '../modules/intake/index.js';
+import { OrdersService } from '../modules/orders/index.js';
 import { createApp } from './app.js';
 
 const CATALOG_PATH = process.env.CATALOG_PATH ?? resolve(process.cwd(), 'catalog/catalog.json');
@@ -43,9 +44,10 @@ async function main(): Promise<void> {
   const catalog = new CatalogService(db);
   await catalog.seedFromFile(CATALOG_PATH);
   const intake = new IntakeService(db);
+  const orders = new OrdersService(db);
 
   // 6. Serve.
-  const app = createApp({ config, db, logger, auth, shops, catalog, intake });
+  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders });
   app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'api listening'));
 }
 

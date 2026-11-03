@@ -6,6 +6,7 @@ import { AuthService } from '../../src/modules/auth/index.js';
 import { ShopsService } from '../../src/modules/shops/index.js';
 import { CatalogService } from '../../src/modules/catalog/index.js';
 import { IntakeService } from '../../src/modules/intake/index.js';
+import { OrdersService } from '../../src/modules/orders/index.js';
 import type { Db } from '../../src/platform/db/index.js';
 import type { Config } from '../../src/platform/config/index.js';
 
@@ -32,6 +33,7 @@ describe('route-schema contract (D12)', () => {
       shops: new ShopsService(fakeDb),
       catalog: new CatalogService(fakeDb),
       intake: new IntakeService(fakeDb),
+      orders: new OrdersService(fakeDb),
     });
 
     const routes = registeredRoutes();

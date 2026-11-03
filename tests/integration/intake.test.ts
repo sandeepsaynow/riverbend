@@ -10,6 +10,7 @@ import { AuthService } from '../../src/modules/auth/index.js';
 import { ShopsService } from '../../src/modules/shops/index.js';
 import { CatalogService } from '../../src/modules/catalog/index.js';
 import { IntakeService, ConflictError, ValidationError } from '../../src/modules/intake/index.js';
+import { OrdersService } from '../../src/modules/orders/index.js';
 import { processRequest } from '../../src/worker/processor.js';
 import { relayOnce } from '../../src/worker/relay.js';
 import { handleExhausted } from '../../src/worker/sweeper.js';
@@ -54,8 +55,9 @@ beforeAll(async () => {
   const shops = new ShopsService(t.db);
   const catalog = new CatalogService(t.db);
   intake = new IntakeService(t.db);
+  const orders = new OrdersService(t.db);
   const config = { DATABASE_ADMIN_URL: t.adminUrl, LOG_LEVEL: 'fatal' } as unknown as Config;
-  app = createApp({ config, db: t.db, logger: createLogger('fatal'), auth, shops, catalog, intake });
+  app = createApp({ config, db: t.db, logger: createLogger('fatal'), auth, shops, catalog, intake, orders });
   const a = await createShopViaApi('rb-a');
   const b = await createShopViaApi('rb-b');
   shopAId = a.id; keyA = a.key; shopBId = b.id; keyB = b.key;

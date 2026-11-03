@@ -7,6 +7,7 @@ import { FakeGateway } from '../platform/llm/fake-gateway.js';
 import { LiteLlmGateway } from '../platform/llm/litellm-gateway.js';
 import type { LlmGateway } from '../platform/llm/index.js';
 import { PipelineService } from '../modules/pipeline/index.js';
+import { OrdersService } from '../modules/orders/index.js';
 import { processRequest } from './processor.js';
 import { handleExhausted, reconcileOnce } from './sweeper.js';
 
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
       : new FakeGateway();
   logger.info({ gateway: gateway.name }, 'ai gateway selected');
 
+  const orders = new OrdersService(db);
   const pipeline = new PipelineService(db, gateway, {
     defaultBudgetMicros: config.DEFAULT_SHOP_BUDGET_MICROS,
     estimateMicros: config.LLM_ESTIMATE_MICROS,
@@ -45,7 +47,10 @@ async function main(): Promise<void> {
     await queue.publish(PIPELINE_QUEUE, payload);
   });
   // Stage 2 (003): the AI pipeline.
-  await queue.work(PIPELINE_QUEUE, (payload) => pipeline.run(payload));
+  await queue.work(PIPELINE_QUEUE, async (payload) => {
+    await pipeline.run(payload);
+    await orders.createFromExtraction(payload.shopId, payload.requestId); // 004: extracted → ordered
+  });
   // Exhausted work in either stage parks needs_review.
   await queue.work(INTAKE_DLQ, (payload) => handleExhausted(db, payload));
   await queue.work(PIPELINE_DLQ, (payload) => handleExhausted(db, payload));

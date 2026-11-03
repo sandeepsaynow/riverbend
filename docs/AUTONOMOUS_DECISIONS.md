@@ -87,3 +87,20 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
 - **Converged* (vs fake):** all planned 003 behavior built + tested. The ONLY outstanding 003 item is
   the real-provider extraction run (blocker **B1**) and the live 40-sample eval/cost (008 + B1) — not
   faked. `extracted` bridges to slice 004 (order creation + pricing).
+
+## Feature 004 — orders-staff
+
+- **Built + tested:** OrdersService.createFromExtraction (one work order per bike, all-or-nothing,
+  unique (shop,request,bike)=I2, idempotent); code-computed pricing (unit×qty, whole cents, I5) with
+  snapshot of unit price + catalog version + name + inspection flag (later catalog change can't rewrite
+  history); per-wheel qty = wheels named; tenant-scoped staff reads GET /v1/orders (+ totals) and
+  GET /v1/needs-attention; worker runs orders after pipeline (extracted → ordered).
+- **Verification:** `npx vitest run` → **69 passed / 69** (adds 6 orders tests: m-1029=USD150,
+  m-1040=two orders USD130, I2 replay, snapshot immutability, requires_inspection=$60, RLS isolation).
+  typecheck + dependency-cruiser clean. **Live:** `make up` → submit 'tune' → observed
+  received→awaiting_pipeline→**ordered**; GET /v1/orders → 1 order, shop_total 6500, item TUNE_BASIC:6500.
+- **Decision — orders as a worker step after pipeline** (not a 3rd queue): the PIPELINE_QUEUE handler
+  calls OrdersService after pipeline.run; createFromExtraction no-ops unless state=extracted. Simplest;
+  reuses the existing queue. Alternative (separate orders queue) rejected as unnecessary at this scale.
+- **Not built this slice (deferred, logged):** verified-channel cancellation + the cancel/processing
+  race (D9, needs email/006); server-rendered staff HTML (D17) — staff data exposed as JSON reads.

@@ -10,6 +10,7 @@ import { AuthService } from '../../src/modules/auth/index.js';
 import { ShopsService } from '../../src/modules/shops/index.js';
 import { CatalogService } from '../../src/modules/catalog/index.js';
 import { IntakeService } from '../../src/modules/intake/index.js';
+import { OrdersService } from '../../src/modules/orders/index.js';
 import { findPolicyGaps } from '../../src/platform/db/policy-check.js';
 import type { Config } from '../../src/platform/config/index.js';
 
@@ -44,7 +45,8 @@ beforeAll(async () => {
   await catalog.seedFromFile(CATALOG);
   const config = { DATABASE_ADMIN_URL: t.adminUrl, LOG_LEVEL: 'fatal' } as unknown as Config;
   const intake = new IntakeService(t.db);
-  app = createApp({ config, db: t.db, logger: createLogger('fatal'), auth, shops, catalog, intake });
+  const orders = new OrdersService(t.db);
+  app = createApp({ config, db: t.db, logger: createLogger('fatal'), auth, shops, catalog, intake, orders });
 }, 180_000);
 
 afterAll(async () => {
