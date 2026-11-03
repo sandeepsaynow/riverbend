@@ -40,3 +40,29 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   across spec/plan/research/data-model/quickstart/tasks.
 - **Idempotency**: keyed only on `(shop, source, submission_id)`; never on content/email/session.
   Content fingerprint used solely for same-id conflict detection (409). Internal UUID PK per message.
+
+---
+
+## Feature 003 — ai-pipeline (checkpoint 1)
+
+- **Spec/plan**: written (lean, grounded in D5/D6/D7 + EDGE_CASES). Routine clarify/analyze/checklist
+  folded here per the autonomous mandate; invariant-bearing cores built and tested first.
+- **Decision — `extracted` bridge state**: 003 persists the validated extraction and ends a resolvable
+  repair at a new `extracted` state; actual work-order creation + price totals are slice 004 (keeps the
+  004 boundary clean). Non-order outcomes use D5 states (answered / awaiting_customer / needs_review /
+  held_budget). Alternatives: create orders in 003 (rejected — that is 004's scope).
+- **Decision — fake gateway default**: tests + local demo use `FakeGateway` (Constitution VIII allows a
+  controllable fake AI server); the real `LiteLlmGateway` refuses to run unless `LLM_*` configured, so
+  nothing is ever faked as real. Real-provider run is **blocker B1**.
+- **Decision — money in micros**: AI spend stored as whole millionths of a dollar (integer `bigint`),
+  per D8; cap/spent/reserved all micros.
+- **Decision — budget period**: `shop_budgets` keyed by `(shop_id, 'YYYY-MM')`; raising `cap_micros`
+  (ensureBudget upsert) is the resume-at-rollover/raised-cap path (D7).
+- **I4 atomicity**: one transaction inserts the `(request, step, attempt)` receipt then
+  `reserved += est WHERE spent+reserved+est <= cap`; concurrent reserves serialize on the budget row
+  (Postgres re-evaluates the WHERE under row lock) → exactly K succeed. Verified by a 20-vs-cap-of-5
+  concurrency test. Replay reuses the receipt (UNIQUE key) with no second charge.
+- **Tests executed**: `npx vitest run` → **49 passed / 49** (adds 4 extraction + 5 budget to the prior
+  40). typecheck clean; dependency-cruiser clean (incl. new llm/budget/pipeline module boundaries).
+- **Unresolved/deferred**: 003 decision logic, one-question (I6) + reply resumption, worker wiring, and
+  the real-provider run (B1). 004–008 not started.
