@@ -5,6 +5,7 @@ import { createLogger } from '../../src/platform/observability/logger.js';
 import { AuthService } from '../../src/modules/auth/index.js';
 import { ShopsService } from '../../src/modules/shops/index.js';
 import { CatalogService } from '../../src/modules/catalog/index.js';
+import { IntakeService } from '../../src/modules/intake/index.js';
 import type { Db } from '../../src/platform/db/index.js';
 import type { Config } from '../../src/platform/config/index.js';
 
@@ -30,6 +31,7 @@ describe('route-schema contract (D12)', () => {
       auth: new AuthService(fakeDb),
       shops: new ShopsService(fakeDb),
       catalog: new CatalogService(fakeDb),
+      intake: new IntakeService(fakeDb),
     });
 
     const routes = registeredRoutes();

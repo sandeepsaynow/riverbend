@@ -33,3 +33,20 @@ services:
     ports:
       - "8080:8080"
     command: ["npm", "run", "start:api"]
+
+  worker:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://app_user:app_pw@db:5432/riverbend
+      DATABASE_ADMIN_URL: postgres://app_admin:admin_pw@db:5432/riverbend
+      DATABASE_MIGRATOR_URL: postgres://riverbend_migrator:mig_pw@db:5432/riverbend
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-dev-only-admin-secret-change-me}
+      MAX_PROCESSING_ATTEMPTS: "3"
+      QUEUE_EXPIRE_SECONDS: "120"
+      RECONCILER_INTERVAL_MS: "10000"
+      LOG_LEVEL: info
+    command: ["npm", "run", "start:worker"]

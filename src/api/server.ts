@@ -7,6 +7,7 @@ import { findPolicyGaps } from '../platform/db/policy-check.js';
 import { AuthService } from '../modules/auth/index.js';
 import { ShopsService } from '../modules/shops/index.js';
 import { CatalogService } from '../modules/catalog/index.js';
+import { IntakeService } from '../modules/intake/index.js';
 import { createApp } from './app.js';
 
 const CATALOG_PATH = process.env.CATALOG_PATH ?? resolve(process.cwd(), 'catalog/catalog.json');
@@ -41,9 +42,10 @@ async function main(): Promise<void> {
   const shops = new ShopsService(db);
   const catalog = new CatalogService(db);
   await catalog.seedFromFile(CATALOG_PATH);
+  const intake = new IntakeService(db);
 
   // 6. Serve.
-  const app = createApp({ config, db, logger, auth, shops, catalog });
+  const app = createApp({ config, db, logger, auth, shops, catalog, intake });
   app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'api listening'));
 }
 

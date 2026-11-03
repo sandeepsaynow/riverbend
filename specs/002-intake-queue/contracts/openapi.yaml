@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: Riverbend — Intake & Durable Queue (002) HTTP Contract
+  version: 0.1.0
+  description: >
+    Slice 002. Shop-authenticated intake (reuses 001 ShopApiKey). Submitting a message returns
+    202 Accepted with the request id + status URL; a reused identifier with different content is
+    409; validation failures (incl. missing submission_id) are 422. No AI. 202 Accepted is an HTTP
+    status, distinct from the internal `awaiting_pipeline` request state.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: intake
+components:
+  securitySchemes:
+    ShopApiKey:
+      type: http
+      scheme: bearer
+      description: A 001 `kind=shop` credential; carries the tenant identity.
+  schemas:
+    SubmitMessageRequest:
+      type: object
+      required: [source, submission_id, content]
+      properties:
+        source: { type: string, enum: [email, web, api], description: Channel / integration namespace. }
+        submission_id:
+          type: string
+          minLength: 1
+          description: Stable source submission identifier (idempotency key). Required (FR-004).
+        content: { type: string, minLength: 1, maxLength: 20000, description: Raw message body. }
+        received_at: { type: string, format: date-time, description: Optional; server clock used if absent/untrusted. }
+    Acknowledgement:
+      type: object
+      required: [request_id, state, status_url]
+      properties:
+        request_id: { type: string, format: uuid, description: The tracking reference. }
+        state: { type: string, enum: [received, processing, awaiting_pipeline, needs_review] }
+        status_url: { type: string, description: Where to poll request status. }
+    RequestStatus:
+      type: object
+      required: [request_id, state]
+      properties:
+        request_id: { type: string, format: uuid }
+        state: { type: string, enum: [received, processing, awaiting_pipeline, needs_review] }
+        source: { type: string, enum: [email, web, api] }
+        submission_id: { type: string }
+        received_at: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        message: { type: string }
+paths:
+  /v1/messages:
+    post:
+      tags: [intake]
+      summary: Submit an inbound message (idempotent on shop+source+submission_id). Shop credential required.
+      security: [{ ShopApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitMessageRequest' }
+      responses:
+        '202':
+          description: >
+            Accepted. Message+request+job persisted atomically; background processing not yet started.
+            A repeat with the same key and identical canonical content returns the SAME request_id here
+            (replay) — no new request is created.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Acknowledgement' } } }
+        '401': { description: Missing/invalid shop credential. }
+        '403': { description: An admin credential was used on a shop route. }
+        '409':
+          description: Same (shop, source, submission_id) reused with DIFFERENT content (FR-006).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '422':
+          description: Malformed body, oversized content, or missing submission_id (FR-004/FR-012).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /v1/requests/{id}:
+    get:
+      tags: [intake]
+      summary: Read a request's current state by its tracking reference. Shop-scoped (RLS).
+      security: [{ ShopApiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The request's current state (only for the owning shop).
+          content: { application/json: { schema: { $ref: '#/components/schemas/RequestStatus' } } }
+        '401': { description: Missing/invalid shop credential. }
+        '404': { description: No such request for this shop (cross-tenant is indistinguishable from not-found). }

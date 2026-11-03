@@ -14,6 +14,8 @@ import { ShopsService } from '../modules/shops/index.js';
 import { registerAdminShopRoutes, registerShopRoutes } from '../modules/shops/routes.js';
 import { CatalogService } from '../modules/catalog/index.js';
 import { registerCatalogRoutes } from '../modules/catalog/routes.js';
+import { IntakeService } from '../modules/intake/index.js';
+import { registerIntakeRoutes } from '../modules/intake/routes.js';
 import { registerHealthRoutes } from '../modules/health/routes.js';
 
 export interface AppDeps {
@@ -23,6 +25,7 @@ export interface AppDeps {
   auth: AuthService;
   shops: ShopsService;
   catalog: CatalogService;
+  intake: IntakeService;
 }
 
 /** Compose the HTTP app. Health is public; /admin requires an admin credential; /v1 a shop one. */
@@ -47,6 +50,7 @@ export function createApp(deps: AppDeps): Express {
   v1.use(shopAuth(deps.auth));
   registerShopRoutes(v1, { shops: deps.shops });
   registerCatalogRoutes(v1, { catalog: deps.catalog });
+  registerIntakeRoutes(v1, { intake: deps.intake });
   app.use('/v1', v1);
 
   app.use(errorHandler(deps.logger));

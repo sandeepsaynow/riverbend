@@ -29,6 +29,21 @@ module.exports = {
       to: { path: '^src/worker/' },
     },
     {
+      name: 'queue-only-via-port',
+      comment:
+        'Use the JobQueue port (platform/queue/index.ts); only the worker composition root may construct the pg-boss adapter.',
+      severity: 'error',
+      from: { pathNot: ['^src/platform/queue/', '^src/worker/index\\.ts$'] },
+      to: { path: '^src/platform/queue/pgboss-adapter\\.ts$' },
+    },
+    {
+      name: 'modules-no-queue-adapter',
+      comment: 'Business modules must not import pg-boss directly.',
+      severity: 'error',
+      from: { path: '^src/modules/' },
+      to: { path: '^node_modules/pg-boss' },
+    },
+    {
       name: 'no-orphans',
       comment: 'Unreachable modules are usually a mistake.',
       severity: 'warn',

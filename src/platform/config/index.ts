@@ -22,6 +22,12 @@ const ConfigSchema = z.object({
   DATABASE_MIGRATOR_URL: nonEmpty,
   // Initial administrative credential secret; fingerprinted at startup (FR-021). No default.
   ADMIN_BOOTSTRAP_TOKEN: nonEmpty,
+  // Slice 002 intake/queue. Total processing attempts incl. the first (pg-boss retryLimit = this − 1).
+  MAX_PROCESSING_ATTEMPTS: z.coerce.number().int().min(1).default(3),
+  // pg-boss job lease/expiration in seconds (drives crash recovery; above worst-case run).
+  QUEUE_EXPIRE_SECONDS: z.coerce.number().int().positive().default(120),
+  // Reconciler poll interval (ms): outbox-delivery backstop + exhaustion → needs_review.
+  RECONCILER_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

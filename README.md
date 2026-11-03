@@ -29,6 +29,23 @@ curl localhost:8080/v1/catalog -H "Authorization: Bearer $KEY"           # 12 se
 
 The HTTP contract is [specs/001-foundation/contracts/openapi.yaml](specs/001-foundation/contracts/openapi.yaml).
 
+### Intake & durable queue (slice 002)
+
+`make up` also starts the **worker** process (relay + processor + reconciler) and pg-boss. Submit a
+message and poll its status (still **no AI** — the request ends at `awaiting_pipeline`):
+
+```sh
+# idempotent on (shop, source, submission_id); 202 Accepted with a request id + status URL
+curl -X POST localhost:8080/v1/messages -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+     -d '{"source":"email","submission_id":"m-1003","content":"The chain keeps slipping."}'   # => 202
+curl localhost:8080/v1/requests/<request_id> -H "Authorization: Bearer $KEY"                    # => { state }
+```
+
+Resubmitting the same `(source, submission_id)` with identical content returns the **same** request;
+with different content it returns **409**. Processing retries, backoff, and crash recovery are owned by
+**pg-boss** (3 attempts, lease-based redelivery); exhausted work parks in `needs_review`. The contract
+is [specs/002-intake-queue/contracts/openapi.yaml](specs/002-intake-queue/contracts/openapi.yaml).
+
 ## Configuration
 
 All settings come from the environment; the app **refuses to start** if a required one is missing
@@ -68,7 +85,12 @@ database-enforced isolation proven by direct-to-DB attack tests; liveness + thre
 (reachable + migrated/compatible + isolation policies forced); fail-fast config; no committed
 secrets (gitleaks); the 12-service versioned catalog.
 
-**Not built here (later slices):** message intake & idempotency (002); the AI pipeline, follow-ups
+**Built (002):** authenticated message intake (202 + status), `(shop, source, submission_id)`
+idempotency with 409 on conflicting reuse, a transactional outbox + pg-boss durable queue, a worker
+that reaches `awaiting_pipeline`, pg-boss-owned retries/crash-recovery with `needs_review` parking,
+and ids-only logging (no customer content). Still no AI.
+
+**Not built here (later slices):** the AI pipeline, follow-ups
 and spend ledger (003); work orders, pricing and the staff screen (004); the web form (005); email
 (006); resilience/tracing (007); the 40-sample evaluation and GCP deploy (008). A **not-built list,
 real hours, and "what breaks first at 100 shops"** are finalized in slice 008.
