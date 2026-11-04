@@ -120,18 +120,22 @@ state, usage reporting, request-level cost references, and the **calendar-month 
 policy); a request-scoped usage record — **not** a second reservation engine — prevents a redelivered
 job from charging twice.
 
-**Why this reverses the original pick.** The original Hybrid chose a Postgres reserve-then-settle ledger
-as authority because "LiteLLM alone" had four gaps: batched spend lag, rolling (not calendar) window,
-unverified fail-open, and no safe replays/resume. **LiteLLM 1.106.6 resolves two** (reservation-based
-budgets and fail-closed enforcement now exist); the other two are handled by design (Riverbend
-administers the calendar reset; a request-scoped usage record preserves no-double-charge on redelivery).
+**Measured limitation (2026-11-04, constitution 2.0.0).** Zero-cost testing (LiteLLM 1.106.6 + Postgres,
+mock upstream + configured pricing) confirmed native enforcement **rejects fail-closed** but is
+**eventually-consistent**: it can exceed a team cap by **~one in-flight call** (spend flush lag). So
+LiteLLM-native is a **bounded soft cap**, not a hard one — this is why I4's guarantee was amended from
+"never exceeds" to "bounded single-in-flight-call overshoot". The owner approved making LiteLLM the sole
+authority with this known trade-off. Mitigation: set each team budget at/below the chain cap; per-call
+cost is micros, so the overshoot is immaterial. (The brief's original "calendar vs rolling" worry: the
+observed `budget_reset_at` was the first of the next month — calendar-aligned — to be pinned in Phase 5.)
 
-**Migration & rollback.** Dual-path behind a flag (`BUDGET_AUTHORITY=litellm|legacy`). The legacy
-`BudgetService` and its `llm_calls`/`shop_budgets` tables are **repurposed, not dropped** (usage/policy
-reporting), so rollback = flip the flag. Native enforcement becomes sole authority **only after** the
-FR-007 acceptance tests pass (zero-cost rejection/mocks; no paid budget-exhaustion runs). **Door:** the
-financial *records* remain one-way (kept, never rewritten); the enforcement engine is now two-way behind
-the flag. See `docs/decision-log.md` (2026-11-04) and Feature 003 FR-007/FR-008.
+**Migration & rollback.** Cutover performed (`BUDGET_AUTHORITY=litellm`, the new default): the pipeline
+no longer calls `reserve`/`settle` for enforcement; it resolves the shop's virtual key, lets the proxy
+admit/deny, and records the proxy-calculated cost per request for accounting. The legacy `BudgetService`
+and `shop_budgets`/`llm_calls` tables are **kept, not dropped** — `BUDGET_AUTHORITY=legacy` restores the
+hard-cap reserve-then-settle path for rollback (or for a shop that needs a strict cap). **Door:** the
+financial *records* stay one-way (kept, never rewritten); the enforcement engine is two-way behind the
+flag. See `docs/decision-log.md` (2026-11-04) and Feature 003 FR-007/FR-008.
 
 **Original Hybrid pick (superseded, kept for history):** Postgres reserve-then-settle ledger as the
 authority; per-shop LiteLLM budget as a seatbelt; atomic `spent + reserved + estimate <= cap`; receipt

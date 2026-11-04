@@ -47,3 +47,18 @@ reserve-then-settle remains the authoritative hard cap (meets I4); LiteLLM-nativ
 become the enforcement **backstop** (set above the Riverbend cap) + the real-cost **accounting** source
 (already captured via `x-litellm-response-cost`). Recommend refining the 1.2.0 amendment / FR-007 wording
 to match this measured reality (pending owner confirmation, since it touches a NON-NEGOTIABLE invariant).
+
+## 2026-11-04 — Constitution 1.2.0 → 2.0.0 (MAJOR): I4 guarantee → bounded soft cap; LiteLLM sole authority
+
+**Change.** With the owner's informed approval (given the measured soft-cap finding above), LiteLLM
+becomes the **sole active** budget-enforcement + accounting authority. Riverbend's reserve-then-settle
+is removed from the active inference path (kept behind `BUDGET_AUTHORITY=legacy` for rollback). I4's
+GUARANTEE is redefined from "never exceeds" (hard) to "enforced fail-closed with a bounded
+single-in-flight-call overshoot" (soft).
+
+**Bump.** MAJOR (2.0.0): redefining a NON-NEGOTIABLE invariant's guarantee. (1.2.0 had changed only the
+mechanism and wrongly kept the guarantee as hard; 2.0.0 corrects the guarantee to the measured reality.)
+
+**Why accepted.** Per-call cost is micros against a $5 cap, so a one-call overshoot is immaterial; teams
+are set at/below the chain cap as mitigation. Verified at zero cost via a mock upstream (no paid calls).
+D7, Feature 003 FR-007, README and the architecture note are reconciled to match.

@@ -104,7 +104,16 @@ no-AI notice; abandoned reservations are reaped. AI spend is stored in **whole m
   inspection; else `needs_review`.
 - **FR-006**: Distinct outcomes MUST be handled by code: wrong shop → `needs_review` (never auto-moved);
   price inquiry → `answered` (no order); delegation → flagged general inspection (no invented list).
-- **FR-007** (amended 2026-11-04, constitution 1.2.0): A per-shop monthly AI budget MUST be enforced by
+- **FR-007** (amended 2026-11-04, constitution **2.0.0** — supersedes the 1.2.0 note below): LiteLLM is
+  the **sole active** budget authority. One LiteLLM **team per shop** ($5/month default) + restricted
+  **virtual keys** the worker selects server-side (never the master key). Admission is **fail-closed**
+  and **eventually-consistent** — it rejects over-budget calls (HTTP 422 → `held_budget`) but may exceed
+  the cap by **at most one in-flight call** (measured; I4's amended bounded-overshoot guarantee). The
+  pipeline does **not** reserve/settle for enforcement in this mode; it records the proxy-calculated cost
+  (`x-litellm-response-cost`), model, tokens, and LiteLLM request id per Riverbend request for accounting
+  (idempotent; no double-count on replay). `BUDGET_AUTHORITY=legacy` keeps the old reserve-then-settle
+  hard-cap path for rollback. See D7 + `docs/decision-log.md`.
+- **FR-007 (1.2.0, superseded)**: A per-shop monthly AI budget MUST be enforced by
   **LiteLLM native budgets** — one LiteLLM **team per shop** with a configurable **$5 calendar-month**
   cap, and **restricted virtual keys** the worker uses for inference (never the master key). Admission
   MUST be **reservation-based and fail-closed**: a call over budget is rejected **before reaching the

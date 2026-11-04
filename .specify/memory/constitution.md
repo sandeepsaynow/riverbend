@@ -1,11 +1,14 @@
 <!--
 SYNC IMPACT REPORT (temporary; remove before committing the amended constitution)
-Version change: 1.1.0 → 1.2.0
-Bump rationale: MINOR — invariant I4's ENFORCEMENT MECHANISM and PROOF are redefined (custom
-  reserve-then-settle ledger → LiteLLM-native team/virtual-key budgets, fail-closed) while its
-  GUARANTEE ("AI spend never exceeds a shop's monthly cap") is unchanged. No principle or
-  invariant guarantee is removed/redefined (not MAJOR); more than wording (not PATCH).
-  Prior: 1.0.0 → 1.1.0 added invariant I8 and expanded VI/VIII/IX (retained below).
+Version change: 1.2.0 → 2.0.0
+Bump rationale: MAJOR — invariant I4's GUARANTEE is redefined. Empirical testing (LiteLLM 1.106.6 +
+  PostgreSQL, zero-cost mock provider; see docs/decision-log.md 2026-11-04) showed native budget
+  enforcement is eventually-consistent: it rejects over-budget calls fail-closed but can exceed the cap
+  by ~one in-flight call. With the owner's informed approval, LiteLLM is now the SOLE active budget
+  authority, so I4 changes from a hard "never exceeds" to "enforced fail-closed with a bounded
+  single-in-flight-call overshoot". Redefining a NON-NEGOTIABLE invariant's guarantee is MAJOR.
+  Prior: 1.1.0 → 1.2.0 moved I4 enforcement to LiteLLM (guarantee then still stated as hard);
+         1.0.0 → 1.1.0 added invariant I8 and expanded VI/VIII/IX (retained below).
 Modified principles:
   VI.   Failure Is Normal — added durable tracking to a terminal/actionable state, mandatory
         staff-review routing when the one clarification round cannot resolve ambiguity, and an
@@ -20,13 +23,16 @@ Added invariant:
   I8 — Any request that may need asynchronous clarification has a valid, authorized reply path
        (mandatory web-form email; reliable email conversation correlation). Delivery channel and
        provider stay implementation decisions.
-Modified invariant (1.2.0):
-  I4 — enforcement moved to LiteLLM-native budgets (one team per shop, restricted virtual keys,
-       fail-closed admission, proxy-calculated cost capture); the calendar-month reset is
-       administered by Riverbend (business policy), and a request-scoped usage record (NOT a
-       second reservation engine) prevents double-charge on redelivery. Guarantee unchanged.
-       Written decision: D7 (updated). The legacy reserve-then-settle path is retained behind a
-       flag for rollback until native enforcement passes acceptance tests (Feature 003 FR-007).
+Modified invariant (2.0.0):
+  I4 — GUARANTEE redefined to a bounded soft cap: AI spend is enforced against a shop's monthly cap by
+       the LiteLLM proxy (one team per shop, restricted virtual keys, fail-closed admission), which may
+       exceed the cap by at most one in-flight call (eventually-consistent spend; measured). LiteLLM is
+       the SOLE active budget authority; proxy-calculated cost is recorded per Riverbend request for
+       accounting (not a second reservation engine). The legacy reserve-then-settle ledger is kept
+       behind BUDGET_AUTHORITY=legacy for rollback only. Written decision: D7 (updated),
+       docs/decision-log.md (2026-11-04). Mitigation: set each team budget at/below the chain cap so
+       the bounded overshoot stays immaterial (per-call cost ≈ micros).
+  (Superseded 1.2.0 note: enforcement moved to LiteLLM with the guarantee still stated as hard.)
 Principle II updated: invariant range I1–I7 → I1–I8 ("all eight invariants").
 Added/removed sections: none (I8 added to the existing Invariants table).
 Preserved unchanged: Principles I–V and VII; invariants I1–I7; all technical non-negotiables.
@@ -156,7 +162,7 @@ The eight invariants, each with the kind of test that proves it (Principles II, 
 | I1 | No request can read another shop's data. | Cross-shop attack tests as the application role (raw SQL **and** via API); a build check fails if any `tenant_id` table lacks a forced policy. |
 | I2 | At most one work order per request and bike. | A unique key on (shop, request, bike number); a test asserting two bikes → two orders and a retry creates no duplicate. |
 | I3 | No model output is saved unless it passed schema validation. | Invalid-output tests: bad JSON and unknown service codes are rejected, never persisted as a work order. |
-| I4 | AI spend never exceeds a shop's monthly cap. | A concurrency test against the enforcing proxy (LiteLLM + its own PostgreSQL): N parallel calls on a shop's restricted virtual key, whose team budget fits K, succeed exactly K times; the rest are rejected **before reaching the provider** and the request parks `held_budget`. Enforcement is **fail-closed** — if budget state cannot be verified, real inference is refused into a recoverable state. The cap is a **calendar-month** policy administered by Riverbend and enforced by LiteLLM at admission; a request-scoped usage record (not a second reservation engine) prevents a redelivered job from charging twice. The legacy reserve-then-settle ledger remains behind a flag for rollback until this passes acceptance. |
+| I4 | AI spend is enforced against a shop's monthly cap by the LiteLLM proxy, **fail-closed**, exceeding the cap by at most **one in-flight call** (bounded overshoot; eventually-consistent spend, measured 2026-11-04). | Zero-cost acceptance against real LiteLLM + its own PostgreSQL using a **mock upstream provider with configured per-token pricing** (no paid calls): a shop's restricted virtual key cannot spend another shop's budget; an exhausted team budget is rejected (HTTP 422) **before the provider** → request parks `held_budget`; the master key is never used for inference; a replay does not double-count; and the per-request recorded cost matches the proxy's `x-litellm-response-cost`. LiteLLM is the sole active authority; the legacy reserve-then-settle ledger remains behind `BUDGET_AUTHORITY=legacy` for rollback (and provides a hard cap if a shop ever needs one). |
 | I5 | price = catalog price × quantity, in integer cents. | Pricing property tests; fixed-sample checks (m-1029 = USD 150, m-1035 quantity 2, m-1024 injection changes no price). |
 | I6 | At most one follow-up question per request. | A database CHECK on the follow-up count, plus a test that tries to force a second question. |
 | I7 | No secret is ever committed. | gitleaks in CI and as a pre-commit hook; typed settings that refuse to start without values. |
@@ -205,4 +211,4 @@ disagree, this constitution wins and the planning doc is corrected.
   principles and invariants before it is accepted. Any added complexity MUST be justified
   against Principle V. An invariant regression is never an acceptable trade-off.
 
-**Version**: 1.2.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-04
+**Version**: 2.0.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-04
