@@ -241,3 +241,9 @@ migrator DB role (documented prod gap: use a restricted role). Operator recovery
 origin + origin-independent DOUBLE-SUBMIT CSRF token (HttpOnly SameSite=Lax rb_csrf cookie <-> hidden _csrf
 field) on all cookie-authed portal POSTs; logout GET->POST; /admin/init stays bootstrap-token auth (no CSRF).
 170/170; verified live (Origin:null+token->401, no token->403). See FINAL_MANUAL_TEST.md canonical-origin.
+
+**GENERAL-SERVICING FIX (2026-11-04, D22):** routine maintenance ("general servicing"/"tune-up"/"basic
+service") now maps to TUNE_BASIC with NO clarification; explicit overhaul→TUNE_FULL; diagnostic→GENERAL_INSPECT;
+specific fault→its code; price→price_inquiry; cancel→no order. Semantic guidance in the extraction system
+prompt (litellm-gateway.ts) + mirrored in FakeGateway. +11 tests → 181/181; live OpenAI confirmed
+(general servicing → TUNE_BASIC, ordered $65, no clarification email).

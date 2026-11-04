@@ -309,3 +309,15 @@ guard rejected (403 "Request blocked") — while curl (no Origin) succeeded, mas
   authenticated by `ADMIN_BOOTSTRAP_TOKEN`, not a cookie, so it is not CSRF-gated).
 - **Production reverse proxy:** set Express `trust proxy` to your proxy before any forwarded headers are
   believed; keep the single HTTPS origin in the allowlist. (Documented gap — not shipped.)
+
+## Servicing classification (D22) — what to expect per message
+When exercising the customer form or `/v1/messages`, these intents resolve deterministically (offline fake
+or live model):
+- "My bike needs general servicing" / "regular tune-up" / "routine maintenance" / "basic service" →
+  **TUNE_BASIC**, a work order (TUNE_BASIC = **$65**), and **no clarification email**.
+- "I need a complete overhaul" → **TUNE_FULL** ($185). "Inspect it / something feels wrong / a noise I can't
+  locate" → **GENERAL_INSPECT**. "Replace the front brake pads" → **BRAKE_PADS**.
+- "How much is servicing?" → a price inquiry (no work order). "Cancel my previous repair" → no new order and
+  no auto-cancel (a person follows up). A genuinely vague message → exactly one clarification.
+If a message is clear routine maintenance but you still see a clarification, check the extraction row
+(`SELECT bikes FROM extractions WHERE request_id=…`) — empty serviceCodes indicate a model/prompt gap (D22).

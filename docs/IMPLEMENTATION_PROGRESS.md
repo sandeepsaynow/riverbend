@@ -228,3 +228,16 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
   Origin:null no-token→403, +token→401; foreign→403.
 - **Prod note:** strict single HTTPS origin allowlist; Secure+SameSite cookies; set a trusted reverse-proxy
   `trust proxy` before believing forwarded headers (documented gap).
+
+## CHECKPOINT 2026-11-04 (D22) — general-servicing misclassification fixed
+
+- **Root cause:** extraction prompt + FakeGateway treated clear routine maintenance ("general servicing")
+  as no-applicable-code → empty serviceCodes → decide() asked a clarification. **Fix:** semantic taxonomy
+  in the system prompt (routine→TUNE_BASIC, explicit overhaul→TUNE_FULL, diagnostic→GENERAL_INSPECT, specific
+  fault→its code, price→price_inquiry, cancel→no order), mirrored deterministically in the FakeGateway. No
+  schema/decide()/catalog change.
+- **Tests:** +11 deterministic (tests/unit/servicing-classification.test.ts) covering the Phase-4 matrix;
+  fixed the brake-pads+bleed both-mapping. Full suite **181/181**; typecheck + lint clean.
+- **Live (real OpenAI via LiteLLM):** "My bike needs general servicing." → extraction `["TUNE_BASIC"]`,
+  request `ordered`, **zero clarification emails**. TUNE_BASIC catalog price $65 (deterministic + prior live
+  $110 order). No cross-tenant leak; email/auth/CSRF/idempotency suites unaffected.

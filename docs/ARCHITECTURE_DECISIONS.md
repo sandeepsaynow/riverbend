@@ -534,3 +534,31 @@ gap — not enabled by client-controlled headers). **Local:** browse the canonic
 (`http://localhost:8080`; `127.0.0.1:8080` also allowed in dev). **Door:** two-way. Verified live: GET sets
 the new Referrer-Policy + `rb_csrf`; `Origin: null` without a token → 403, with a valid token → 401 (CSRF
 passes); foreign origin → 403. See `specs/010-staff-auth-portal/` and `docs/FINAL_MANUAL_TEST.md`.
+
+## D22 — Catalog classification taxonomy for maintenance vs. clarification (refines D3/D5)
+
+**Problem (real user regression):** "My bike needs general servicing" produced a clarification email
+("What specific issues…?") instead of a work order. Root cause: the extraction prompt (and the offline
+FakeGateway) treated a clear routine-maintenance request as having *no clearly-applicable code* → empty
+`serviceCodes` → `decide()` asked the one follow-up. The model, not the deterministic policy, was the
+weak point (it was told "if no allowed code clearly applies, leave serviceCodes empty").
+
+**Pick:** teach the extraction a small, generalizable **semantic taxonomy** (in the system prompt — not
+hardcoded phrase-matching in the production classifier; the FakeGateway mirrors it deterministically for
+tests/offline):
+- **Routine maintenance** ("service", "general servicing", "tune-up", "routine/regular maintenance",
+  "basic service") → **TUNE_BASIC**. A clear routine request is **not** ambiguous for lack of a named
+  fault → **no clarification**.
+- **Explicit full/complete overhaul or rebuild** → **TUNE_FULL** (never for the mere word "service").
+- **Diagnostic** — "inspect", or a symptom the customer can't localize ("something feels wrong", "a noise
+  I can't locate") → **GENERAL_INSPECT**.
+- **Specific repair** → its specific catalog code (e.g. brake pads → BRAKE_PADS), never TUNE_BASIC by default.
+- **Price-only inquiry** → `price_inquiry` (no work order). **Cancellation/change** → no new order and no
+  auto-cancel (serviceCodes empty; a person follows up).
+- **True clarification** only when no allowed code applies and intent is genuinely unclear (≤1 question, I6).
+
+The code contract is unchanged: catalog remains the only price source (I5), schema+catalog validation (I3),
+one-question policy (I6), `decide()` still owns the outcome. Unknown bike type / date are represented as
+absent (dateWords null) — never fabricated, never a clarification trigger. **Verified live:** "general
+servicing" → TUNE_BASIC, `ordered`, zero clarification emails. **Door:** two-way (prompt + fake, no schema
+change). See `specs/003-ai-pipeline/`.

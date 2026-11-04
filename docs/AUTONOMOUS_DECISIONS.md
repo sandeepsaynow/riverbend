@@ -191,3 +191,16 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
 - **Evidence:** live — Origin:null + token → 401 (passes), without token → 403; Referrer-Policy header
   confirmed. Automated — the full session/create-staff/staff-login flow runs through the token flow (portal
   test), plus a dedicated regression for the exact browser-403 scenario. 170/170.
+
+## 2026-11-04 — Feature 003 (D22): catalog classification taxonomy (general-servicing regression)
+
+- **Traced the real pipeline, not the screenshot:** confirmed cause B — the model/FakeGateway left
+  serviceCodes empty for clear routine maintenance ("general servicing") → decide() asked a clarification
+  (decide.ts: !hasService && !alreadyAsked → ask). Not a validation rejection, not an email defect.
+- **Smallest fix:** generalizable semantic taxonomy in the extraction system prompt (not hardcoded phrase
+  matching in production); FakeGateway mirrors it for deterministic tests. Catalog-as-price (I5), schema+
+  catalog validation (I3), one-question (I6) and decide() all unchanged. Overhaul→TUNE_FULL only on explicit
+  overhaul intent (never the bare word "service"); specific faults keep their own codes; price/cancel never
+  fabricate an order.
+- **Evidence:** 11 deterministic cases + 1 live OpenAI call (general servicing → TUNE_BASIC, ordered, no
+  clarification). Resend/LiteLLM/intake/isolation untouched; 181/181.

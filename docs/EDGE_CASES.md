@@ -166,3 +166,16 @@ These edge cases are introduced by our design, not the brief's dataset:
   a referrer policy that keeps a real same-origin Origin **and** an origin-independent double-submit token
   (HttpOnly SameSite=Lax cookie ⇔ hidden field) that works even with `Origin: null`; foreign origins still 403.
 - Logout as GET is state-changing/forgeable → use POST + token.
+
+## Request classification taxonomy (D22) — maintenance vs. clarification
+| Customer intent | Example | Outcome |
+|---|---|---|
+| Routine maintenance | "general servicing", "tune-up", "routine maintenance", "basic service" | **TUNE_BASIC**, work order, **no clarification** |
+| Full overhaul (explicit) | "complete overhaul", "rebuild" | **TUNE_FULL** (never for the word "service" alone) |
+| Diagnostic / unlocalized symptom | "inspect it", "something feels wrong", "a noise I can't locate" | **GENERAL_INSPECT** |
+| Specific repair | "replace the front brake pads" | the specific code (BRAKE_PADS…), never TUNE_BASIC by default |
+| Price inquiry | "how much is servicing?" | `price_inquiry`, no work order |
+| Cancellation / change | "cancel my previous repair" | no new order, **no auto-cancel**; a person follows up |
+| Genuinely unclear | vague/empty | exactly one clarification (I6) |
+- Unknown bike type / requested date are represented as absent (dateWords null) — never fabricated and
+  never a clarification trigger on their own.

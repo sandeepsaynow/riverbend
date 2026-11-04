@@ -150,3 +150,13 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   authed (no CSRF). Rejected globally-allowing-null / disabling CSRF / wildcard CORS / Referer-or-Sec-Fetch-
   alone. ARCHITECTURE_DECISIONS D20.3; +CSRF tests incl. the exact browser-403 regression. 170/170. Verified
   live (Origin:null no-token→403, +token→401; Referrer-Policy header confirmed).
+
+## 2026-11-04 — Feature 003 (D22): catalog classification taxonomy (general-servicing regression)
+
+- **Root cause:** extraction prompt + offline FakeGateway treated clear routine maintenance as having no
+  applicable code → empty serviceCodes → decide() asked a clarification. **Fix:** a generalizable semantic
+  taxonomy in the system prompt (routine→TUNE_BASIC, explicit overhaul→TUNE_FULL, diagnostic→GENERAL_INSPECT,
+  specific fault→its code, price→price_inquiry, cancel→no order, else one clarification), mirrored in the
+  FakeGateway for deterministic tests. Catalog/I3/I5/I6/decide() unchanged. ARCHITECTURE_DECISIONS D22.
+  11 deterministic tests + 1 live OpenAI call: "general servicing" → TUNE_BASIC, ordered ($65), no
+  clarification email. 181/181.

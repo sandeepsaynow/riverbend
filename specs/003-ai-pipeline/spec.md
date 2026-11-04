@@ -165,3 +165,15 @@ no-AI notice; abandoned reservations are reaped. AI spend is stored in **whole m
   run + the 40-sample eval + cost report are gated on credentials (blocker B1), per the brief's
   free-provider choice and the < USD 20 cap.
 - Money/AI-spend representation: whole millionths of a dollar (integers), per D8.
+
+## Amendment (D22, 2026-11-04) — catalog classification taxonomy (general-servicing regression fix)
+- **FR-cls1:** clear **routine maintenance** ("service"/"general servicing"/"tune-up"/"routine|regular
+  maintenance"/"basic service") → **TUNE_BASIC**; it is NOT ambiguous for lack of a named fault → no
+  clarification. **Explicit full/complete overhaul or rebuild** → **TUNE_FULL** (never for the word
+  "service" alone). **Diagnostic / unlocalized symptom** → **GENERAL_INSPECT**. **Specific fault** → its
+  specific code (never TUNE_BASIC by default). **Price-only** → `price_inquiry`. **Cancellation/change** →
+  no new order and no auto-cancel. Else ≤1 clarification (I6).
+- **FR-cls2:** this guidance lives in the extraction **system prompt** (generalizable semantics, not
+  hardcoded phrase-matching in the production classifier); the offline FakeGateway mirrors it deterministically.
+- **FR-cls3:** unknown bike type / date are absent (dateWords null), never fabricated, never a clarification
+  trigger. Catalog remains the only price source (I5); schema+catalog validation (I3) and `decide()` unchanged.

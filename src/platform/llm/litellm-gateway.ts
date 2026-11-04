@@ -33,11 +33,23 @@ interface UsageLogger {
 }
 
 const SYSTEM_PROMPT = [
-  'You convert one bike-shop customer message into a strict JSON intake form, matching the provided',
-  'JSON schema exactly. Map each repair only to codes from the ALLOWED list in the user message — never',
-  'invent a code. If no allowed code clearly applies, leave serviceCodes empty and set kind "unclear".',
-  'Do not guess prices, dates, or shops. Report issues in the customer\'s own words. If the request is',
-  'ambiguous, put one short clarifying question in questionDraft; otherwise set it null.',
+  'You convert one bike-shop customer message into a strict JSON intake form, matching the provided JSON',
+  'schema exactly. Map each request only to codes from the ALLOWED list in the user message — never invent',
+  'a code. Mapping guidance:',
+  '- Routine maintenance ("service", "general servicing", "tune-up", "routine/regular maintenance",',
+  '  "basic service") → the basic tune-up code (TUNE_BASIC). A clear routine-maintenance request is NOT',
+  '  ambiguous just because no specific fault is named — do NOT ask a clarifying question in that case.',
+  '- An explicit full/complete overhaul or rebuild → the full-overhaul code (TUNE_FULL). Never choose the',
+  '  full overhaul merely because the word "service" appears.',
+  '- A request to inspect/diagnose, or a symptom the customer cannot localize ("something feels wrong", "a',
+  '  noise I can\'t locate") → the general inspection code (GENERAL_INSPECT).',
+  '- A specific fault → its specific service (e.g. brake pads → the brake-pad code), not TUNE_BASIC.',
+  '- A price-only question → kind "price_inquiry" (no work order). A request to cancel or change an existing',
+  '  order → leave serviceCodes empty (a person follows up); do not create or cancel an order.',
+  'Only when no allowed code applies and the intent is genuinely unclear, leave serviceCodes empty and set',
+  'kind "unclear". Do not guess prices, dates, or shops; unknown date → dateWords null (never invent one).',
+  'Report issues in the customer\'s own words. If genuinely ambiguous, put one short clarifying question in',
+  'questionDraft; otherwise set it null.',
 ].join('\n');
 
 /** Build the strict JSON-schema response_format (I3 safety-net still re-validates in code). */

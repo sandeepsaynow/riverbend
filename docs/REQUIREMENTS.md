@@ -160,3 +160,5 @@ These require a human decision; see the dedicated section at the end of
 | P2 | **Portal CSRF canonical-origin policy** (D20.2): state-changing POSTs validate the full scheme://host:port Origin against an exact allowlist (prod = one HTTPS origin; dev adds the loopback sibling). | D20.2 |
 
 | P1 | **Portal double-submit CSRF** (D20.3): cookie-authed state-changing POSTs require an HttpOnly SameSite=Lax rb_csrf cookie matching a hidden _csrf field (origin-independent), plus the exact-origin allowlist; Referrer-Policy strict-origin-when-cross-origin. | D20.3 |
+
+| P1 | **Catalog classification taxonomy** (D22): routine maintenance→TUNE_BASIC (no clarification), explicit overhaul→TUNE_FULL, diagnostic→GENERAL_INSPECT, specific fault→its code, price→price_inquiry, cancel→no order; one clarification only when genuinely unclear. | D3/D5 → D22 |
