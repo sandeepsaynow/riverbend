@@ -8,6 +8,30 @@ Built slice by slice (001–008); each slice has a spec under [`specs/`](specs/)
 record in [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md). The permanent rules are
 in the [constitution](.specify/memory/constitution.md).
 
+## Reviewer — start here
+
+```sh
+docker compose up --build        # Postgres + api + worker; migrates, seeds, serves on http://localhost:8080
+# or, if host :5432 is busy / you want the browser portal + Swagger locally:
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm up -d --build
+```
+
+- **Demo mode is deterministic** — with no API keys the AI uses an offline `FakeGateway` (no cost, no
+  network); real OpenAI/Resend activate only when their keys are set (see Environment below). We do **not**
+  fake real email/LLM.
+- **Evaluate the 40 sample messages:** `make eval` (deterministic) → writes `docs/results.md`; real-model
+  `make eval-live` (paid, gated). **Latest deterministic run:** 40 messages → **32 work orders, 4 follow-ups,
+  0 failures**, 1 price answer, 2 needs-review, 1 idempotent replay; total order value **$1,865** (model
+  spend $0 real / est. $0.074). Full report: [`docs/evaluation-results.md`](docs/evaluation-results.md).
+- **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
+  (Docker required); **196 passing**.
+- **Submission docs:** [architecture note](docs/architecture.md) (2-page, Mermaid) ·
+  [Not Built & scaling](docs/not-built.md) · [evaluation results](docs/evaluation-results.md) ·
+  [GCP deployment](docs/gcp-deployment.md) (`infra/terraform/`) · [manual test walkthrough](docs/FINAL_MANUAL_TEST.md) ·
+  [submission checklist](docs/submission-checklist.md) · decisions in [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md).
+- **Stack (actual):** Express 5 + PostgreSQL 16 (forced RLS) + **pg-boss** (Postgres queue, no Redis) +
+  Better Auth + Resend + a LiteLLM proxy over OpenAI. No Next.js, no Redis.
+
 ## Quick start (one command, no API key)
 
 Requires Docker. The default run is fully offline — the AI uses a deterministic **FakeGateway**, so

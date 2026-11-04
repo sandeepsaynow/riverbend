@@ -39,6 +39,15 @@ jobs:
         env:
           GITLEAKS_CONFIG: .gitleaks.toml
 
+  compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config (default + local overlay)
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm config -q
+
   terraform:
     runs-on: ubuntu-latest
     steps:

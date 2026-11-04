@@ -1,0 +1,71 @@
+name: Deploy (GCP, manual)
+
+# Manual-only (workflow_dispatch) — NEVER auto-deploys on push. Authenticates to GCP via Workload Identity
+# Federation (OIDC) — no long-lived JSON keys. Requires the `production` GitHub Environment (for approval)
+# and these repo/environment variables to be configured; without them the job no-ops with a clear message.
+# Vars: GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_DEPLOYER_SA, AR_REPO (e.g. riverbend).
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to build & deploy (e.g. a git sha)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC → Workload Identity Federation
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production # approval gate; configure reviewers in repo settings
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight — required config present?
+        id: pre
+        run: |
+          missing=""
+          for v in GCP_PROJECT_ID GCP_REGION GCP_WIF_PROVIDER GCP_DEPLOYER_SA AR_REPO; do
+            [ -z "${!v:-}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::Deployment not configured; missing vars:$missing — skipping (no deploy attempted)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          GCP_DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA }}
+          AR_REPO: ${{ vars.AR_REPO }}
+
+      - name: Authenticate to GCP (OIDC / Workload Identity Federation)
+        if: steps.pre.outputs.ready == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up gcloud
+        if: steps.pre.outputs.ready == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build & push image to Artifact Registry
+        if: steps.pre.outputs.ready == 'true'
+        run: |
+          IMG="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/app:${{ inputs.image_tag }}"
+          gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+          docker build -t "$IMG" .
+          docker push "$IMG"
+          echo "IMG=$IMG" >> "$GITHUB_ENV"
+
+      - name: Deploy image to Cloud Run (api + worker)
+        if: steps.pre.outputs.ready == 'true'
+        run: |
+          gcloud run services update rb-api    --region "${{ vars.GCP_REGION }}" --image "$IMG" --quiet
+          gcloud run services update rb-worker  --region "${{ vars.GCP_REGION }}" --image "$IMG" --quiet
+          # Migrations run on api startup (migrate-before-serve). Smoke-test after rollout:
+          echo "Deployed $IMG. Verify: GET https://<domain>/readyz"
