@@ -108,3 +108,13 @@ Verified against installed `resend@6.37.0` TS defs + docs (api-reference/emails/
 - Content is still fetched with `resend.emails.receiving.get(id)` (unchanged); general API rate limit is
   10 req/s per team → 429 (earlier research), so a tick makes 1 list/page + 1 get/new-email, bounded.
 - The official **`resend-cli`** is NOT needed in polling mode (no public URL / webhook / tunnel).
+
+## Live-provider finding (D21.2, 2026-11-04) — reply-to local-part length
+Verified against the real Resend API with a live key: a send whose `reply_to` is `reply+<token>@…` with a
+**142-char local part** (the old string-encoded token: base64url("shopId:requestId") + "." + base64url(HMAC))
+is rejected **HTTP 422** (validation). A short local part (~25 chars) is accepted (200). Root cause: RFC 5321
+caps an email local part at **64 chars**; the old token blew past it, so every real clarification failed to
+send and parked the request `needs_review` (`email_delivery_failed`). **Fix:** pack the two UUIDs as raw
+bytes (16+16) + a 10-byte truncated HMAC into one base64url blob — 42 bytes → 56 chars → `reply+<token>@`
+local part = **62 chars** (≤64). Same signed-correlation security (80-bit MAC + one-round/awaiting/Message-ID
+gates). `mintReplyToken`/`readReplyToken` keep their signatures; no other code or test changed.

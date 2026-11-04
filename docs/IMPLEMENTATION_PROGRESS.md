@@ -167,3 +167,18 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
 - **Credential reality:** OPENAI_API_KEY valid (200); **RESEND_API_KEY invalid (401)** + RESEND_WEBHOOK_SECRET
   not a valid Svix secret → real Resend outbound/inbound/delivery (B/C/D) **BLOCKED**; deterministic Resend
   integration (A) passes. **T054 browser click-through still manual** (no browser automation); guide written.
+
+## CHECKPOINT 2026-11-04 (LIVE RESEND) — real-provider acceptance + a submission-critical fix
+
+- **D21.2 bug fixed (found by live testing):** the `reply+<token>@` local part was ~142 chars (old string
+  token) → Resend **HTTP 422**, so every real clarification failed → `needs_review`. Re-encoded the token
+  as raw-byte UUIDs + a 10-byte HMAC in one base64url blob → **62-char** local part (≤64). Same signed
+  correlation; `mintReplyToken`/`readReplyToken` signatures unchanged; 138/138 still green.
+- **Verified against the REAL Resend account (key in .env):** key valid (200); Receiving list + `get`
+  schema match the app; the **live polling worker** discovered a real received email, fetched content, and
+  ignored it (unmatched); outbound to `delivered@resend.dev` → 200 + id; and a **real Riverbend
+  clarification now SENDS** (outbox `sent`, provider id persisted) where it was 422 before the fix.
+- **Still blocked (needs a human):** the customer-reply resumption (D) — reply from a real mailbox to a
+  `reply+<token>@karoiechou.resend.app` address; `delivered@resend.dev` can't reply. Full outbound to
+  arbitrary customers needs a verified sending domain (currently `onboarding@resend.dev`).
+- Regression: typecheck+lint clean; `vitest` **138/138**; stack torn down; host Postgres untouched.

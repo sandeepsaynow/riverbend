@@ -173,13 +173,32 @@ or secrets.
 | isolation | Northside cannot see Downtown orders |
 | /staff/usage | LiteLLM budget + spend visible |
 
+## Live Resend validation (observed 2026-11-04, real key in `.env`)
+
+- **API key:** valid — `GET /emails/receiving` → **200**.
+- **Receiving API:** **PASS** — list returns the account's emails at the managed domain
+  `karoiechou.resend.app`; `receiving.get` response schema matches the app's `ReceivedEmail` mapping.
+- **Polling worker:** **PASS** — the live worker discovered a real received email, fetched its content, and
+  correctly **ignored** it (not a `reply+token` address); checkpoint advanced, lease released.
+- **Outbound provider API:** **PASS** — a send to `delivered@resend.dev` returned **200** + a real id.
+- **Real Riverbend clarification:** **PASS** (after the D21.2 token fix) — an ambiguous request → real
+  OpenAI question → `awaiting_customer` → Resend send → `email_outbox` `sent` with a persisted provider id.
+  (Before the fix it was **422** because the `reply+<token>@` local part was 142 chars > RFC's 64; the token
+  is now a compact 62-char local part.)
+- **Full customer reply (D):** **BLOCKED-pending-you** — reply from a real mailbox to the
+  `reply+<token>@karoiechou.resend.app` address of a live awaiting request (step 14). `delivered@resend.dev`
+  does not reply, so the resumption half can't be driven automatically; the discovery/correlation mechanics
+  are proven.
+
 ## 17. Known limitations to show in the submission
 
-- **Resend credentials in the current `.env` are placeholders** (`RESEND_API_KEY` returns HTTP 401 to the
-  real API; `RESEND_WEBHOOK_SECRET` is not a valid Svix secret). So real outbound (B), real inbound (C) and
-  full delivery (D) are **BLOCKED** until a live key + a Resend-managed receiving address are set. The app
-  degrades safely: the webhook self-disables with a warning; polling logs `resend inbound poll failed` and
-  retries. **OpenAI/LiteLLM credentials are valid** and the live-AI path was verified (order $110.00).
+- **Full outbound customer delivery still needs a verified sending domain.** With `onboarding@resend.dev`
+  (no verified domain) Resend only delivers to the account's own address; test recipients (`delivered@`,
+  `bounced@resend.dev`) simulate outcomes. Set a verified domain + `RESEND_FROM` on it for arbitrary customers.
+- **The customer-reply resumption (D)** requires a human to send a reply to a `reply+<token>@` address — not
+  scriptable here. The webhook path is optional (set `RESEND_WEBHOOK_SECRET`); polling is the default.
+- A delivery status of `sent` means the provider accepted the send; it is **not** `delivered` until a
+  delivery event confirms it (no webhook configured → status stays `sent`).
 - **Browser portal login needs the local overlay** (`docker-compose.local.yml`) over plain http, because
   `NODE_ENV=production` sets Secure-only cookies. In real production (HTTPS) this is correct and needs no overlay.
 - **Swagger `/docs` + `/openapi.json` are disabled when `NODE_ENV=production`** (009: non-prod only). The

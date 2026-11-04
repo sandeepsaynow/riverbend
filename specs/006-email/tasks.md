@@ -56,3 +56,12 @@ Original 006 (Mailpit) shipped under commit history; these tasks cover the Resen
       work-order idempotency.
 - [x] T075 typecheck + lint + full vitest + `docker compose config` green; docs reconciled (D21.1 in
       ARCH/decision-log/REQUIREMENTS/EDGE_CASES/PROGRESS/AUTONOMOUS_*/README/.env.example/quickstart/Makefile).
+
+## Phase 7 — Live-provider acceptance (D21.2)
+- [x] T080 Fix reply-to local-part length (>64 → Resend 422): compact binary token encoding in
+      `tokens.ts` (two UUIDs as raw bytes + 10-byte HMAC, one base64url blob; 62-char local part). Correlation
+      semantics + signatures unchanged; 21 email/webhook/poll tests still green.
+- [x] T081 Live key validation (200), Receiving list+get schema match, live polling discovery+ignore of a
+      real received email, outbound send to delivered@resend.dev (200 + id). Documented in FINAL_MANUAL_TEST.md.
+- [ ] T082 Full real customer-reply resumption — BLOCKED-pending-user: requires replying from a real mailbox
+      to a `reply+<token>@<RESEND_REPLY_DOMAIN>` address of a live awaiting request (steps in quickstart).

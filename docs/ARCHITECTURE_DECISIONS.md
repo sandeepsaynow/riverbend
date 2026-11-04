@@ -436,3 +436,14 @@ remain listable; at 60s this is safe for dev/MVP, and production should prefer w
 rate limit is 10 req/s; a tick is bounded to `maxPages` list calls + one `get` per new email. **Door:**
 two-way — polling and webhook are independent inbound adapters over the same durable pipeline. See
 `specs/006-email/` (D21.1 sections).
+
+## D21.2 — Compact reply-correlation token (live-provider fix)
+
+**Pick:** encode the `reply+<token>@` token as the two UUIDs packed as **raw bytes** (16+16) plus a 10-byte
+truncated HMAC, in a single base64url blob (42 bytes → 56 chars). **Why:** live testing against the real
+Resend API showed the previous string-encoded token produced a **142-char** email local part, which Resend
+rejects with **HTTP 422** (RFC 5321 caps a local part at 64 chars) — so every real clarification email
+failed and parked `needs_review`. The compact form is **62 chars** (≤64) and keeps the signed-correlation
+security (80-bit MAC, backed by the one-round + `awaiting_customer` + Message-ID de-dup gates).
+`mintReplyToken`/`readReplyToken` keep their signatures; nothing else changed. Verified live: a real
+clarification then sent successfully (outbox `sent`, provider id persisted). **Door:** two-way (encoding-only).

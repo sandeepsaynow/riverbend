@@ -216,3 +216,11 @@ only); no duplicate work orders (unique (shop,request,bike) = I2); no invented p
 snapshot = I5); no unvalidated LLM output persisted (I3); one clarification (UNIQUE follow_up = I6);
 pg-boss the sole retry authority; spend in micros under a per-shop cap (I4); no secrets in Git;
 ids-only logging (no customer text).
+
+**LIVE RESEND (2026-11-04):** real key in `.env` is valid. Fixed D21.2 — the `reply+<token>@` local part
+(~142 chars, old string token) hit Resend's RFC-64 limit → HTTP 422, failing every real clarification;
+re-encoded as raw-byte UUIDs + 10-byte HMAC (62-char local part), signatures unchanged, 138/138 green.
+Verified live: key 200; Receiving list+get schema match; live polling worker discovered+ignored a real
+email; outbound to delivered@resend.dev 200+id; a **real clarification now sends** (outbox `sent`, provider
+id). BLOCKED-pending-user: the customer-reply resumption (reply to a `reply+<token>@karoiechou.resend.app`
+address) + arbitrary-recipient delivery (needs a verified sending domain; from is onboarding@resend.dev).

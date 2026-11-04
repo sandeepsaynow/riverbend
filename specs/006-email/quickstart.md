@@ -68,3 +68,6 @@ the sections above. Webhooks push `email.received` immediately (no 60s poll dela
 run together; Message-ID de-dup guarantees a single work effect. **Retention caveat:** Resend does not
 document how long received emails remain listable — polling recovers anything still listable at the next
 tick, but a push webhook is the stronger guarantee for production.
+
+> **D21.2 (live fix):** the `reply+<token>@` local part is now 62 chars (compact binary token) so
+> strict providers accept it — the old string token was ~142 chars and Resend rejected it HTTP 422.
