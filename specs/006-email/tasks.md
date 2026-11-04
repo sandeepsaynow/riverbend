@@ -43,3 +43,16 @@ Original 006 (Mailpit) shipped under commit history; these tasks cover the Resen
 - [x] T051 Re-run analyze/converge; commit locally (no push).
 - [ ] T060 Real-provider verification (Phase K) — BLOCKED without `RESEND_API_KEY` + receiving address +
       webhook secret; record exact manual steps in quickstart. Do not fabricate.
+
+## Phase 6 — Inbound polling (D21.1; default local/MVP)
+- [x] T070 Migration `11100_email_poll.cjs`: `email_poll_state` singleton (checkpoint + lease), admin-only.
+- [x] T071 Config: `RESEND_POLLING_ENABLED` (default true), `RESEND_POLL_INTERVAL_SECONDS` (default 60).
+- [x] T072 `ReceivingLister` port + `ResendReceiving.list`; `EmailService.pollOnce` + `tryClaimPoll` (lease).
+- [x] T073 pg-boss `workPoll`/`schedulePoll` (singleton, self-rescheduling) + `EMAIL_POLL_QUEUE`; wire the
+      worker (pollOnce → processPendingEvents) behind `RESEND_POLLING_ENABLED` + `RESEND_API_KEY`.
+- [x] T074 `tests/integration/email-poll.test.ts`: empty list, one reply (e2e), multiple pages, duplicate
+      ids (dedup), retry-after-failure, worker restart, cursor persistence, concurrent pollers (lease),
+      wrong-shop token, invalid token, unrelated email, duplicate Message-ID, one-question, resumption +
+      work-order idempotency.
+- [x] T075 typecheck + lint + full vitest + `docker compose config` green; docs reconciled (D21.1 in
+      ARCH/decision-log/REQUIREMENTS/EDGE_CASES/PROGRESS/AUTONOMOUS_*/README/.env.example/quickstart/Makefile).

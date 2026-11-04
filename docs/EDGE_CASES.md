@@ -18,7 +18,10 @@ invariants.
   `REQUIREMENTS.md` Q-TZ).
 - The samples carry **no customer contact details**. The evaluation gives web samples a made-up
   address (e.g. `eval+m-1027@example.test`) so follow-ups have somewhere to go (in offline runs the
-  in-memory transport records them; with Resend configured they send via the provider, D21).
+  in-memory transport records them; with Resend configured they send via the provider, D21). Inbound in
+  local/MVP is discovered by **Resend API polling** (D21.1): unstated provider ordering/retention are
+  handled by de-dup-by-id (authoritative) + a durable lease; a missed-before-poll email is the documented
+  retention risk — production prefers the push webhook.
 - The brief says **8** messages are "deliberately tricky" but does not say which; the guide treats
   more than 8 as tricky. **Flagged as an ambiguity** in `REQUIREMENTS.md` Part D.
 

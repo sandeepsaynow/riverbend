@@ -25,3 +25,11 @@ Reviewer-owned. `[x]` = the reviewer judged the requirement well-specified (not 
 ## Testing honesty
 - [ ] CHK014 Are mocked-SDK tests labelled deterministic-integration, never evidence of real delivery? [research §8]
 - [ ] CHK015 Is TEST C marked BLOCKED without a verified sending domain rather than fabricated? [quickstart]
+
+## Polling mode (D21.1)
+- [ ] CHK016 Is single-flight across instances specified (durable lease) so concurrent pollers can't double-process? [FR-018]
+- [ ] CHK017 Is each discovered provider id persisted BEFORE the checkpoint advances, with dedup on rediscovery? [FR-017]
+- [ ] CHK018 Are pagination + unstated ordering handled by dedup (not order-dependence)? [FR-016]
+- [ ] CHK019 Is failure handling specified (release lease, no advance, bounded interval-paced retry; 429/restart/partial pages safe)? [FR-019]
+- [ ] CHK020 Is the unstated retention assumption documented (webhooks preferred for production)? [FR-019, research]
+- [ ] CHK021 Is provider-API integration testing distinguished from complete customer-email delivery testing? [quickstart]

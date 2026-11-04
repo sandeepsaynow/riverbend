@@ -42,3 +42,29 @@ sending domain is verified (SPF/DKIM) and `RESEND_FROM` uses it; mark BLOCKED, d
 Verify a sending domain (SPF TXT+MX, DKIM) and, for your own receiving domain, add the Resend **MX**
 record at lowest priority (prefer a subdomain, e.g. `inbound.riverbend.example`). GCP blocks port 25, so
 Resend (HTTPS API + webhook) is required. Store all keys in Secret Manager (see Terraform).
+
+## Default local inbound: Resend API polling (D21.1 — no public URL / webhook / tunnel)
+Polling is ON by default; it activates when `RESEND_API_KEY` + `EMAIL_SIGNING_KEY` are set (and
+`RESEND_POLLING_ENABLED` is not `false`). `RESEND_WEBHOOK_SECRET` is **not** needed in this mode.
+
+1. **.env:** set `EMAIL_SIGNING_KEY`, `RESEND_API_KEY`, `RESEND_REPLY_DOMAIN` (your Resend-managed
+   `<id>.resend.app` receiving domain), `RESEND_FROM`. Optional: `RESEND_POLL_INTERVAL_SECONDS` (default 60).
+2. **Run:** `docker compose up` (or `make up`). The worker polls `emails.receiving.list` every 60s,
+   discovers new emails, fetches their content, and resumes the matching request.
+3. **Reviewer demo (how to send an email and have it processed):**
+   - Trigger a clarification in-app (submit an ambiguous request via `/f/<shop>`), so the customer address
+     receives `reply+<token>@<id>.resend.app`.
+   - From any mailbox (Gmail/Outlook), send a reply **to that `reply+<token>@<id>.resend.app` address**
+     (or reply to the clarification email). Within one poll interval the worker lists it, fetches content,
+     correlates by the signed token, strips quotes, records the reply, and resumes the pipeline — visible in
+     the staff console. Unrelated / forged-token emails create no work order.
+4. This exercises the **real Resend provider API** (list + retrieve) end to end. It is **provider-API
+   integration testing**, distinct from **complete customer-email delivery testing** (TEST C), which still
+   requires a verified sending domain so outbound reaches arbitrary customer inboxes.
+
+### Optional: production webhooks (lower latency)
+Set `RESEND_WEBHOOK_SECRET` + configure the dashboard webhook (`POST <public-url>/webhooks/resend`) as in
+the sections above. Webhooks push `email.received` immediately (no 60s poll delay). Polling and webhooks may
+run together; Message-ID de-dup guarantees a single work effect. **Retention caveat:** Resend does not
+document how long received emails remain listable — polling recovers anything still listable at the next
+tick, but a push webhook is the stronger guarantee for production.

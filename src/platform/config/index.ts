@@ -62,6 +62,11 @@ const ConfigSchema = z.object({
   RESEND_FROM: z.string().default('Riverbend Cycles <onboarding@resend.dev>'), // verified sender (or resend.dev while testing)
   RESEND_REPLY_DOMAIN: z.string().default('riverbend.example'),                // reply+<token>@<this> (a Resend receiving domain)
   EMAIL_MAX_SEND_ATTEMPTS: z.coerce.number().int().positive().default(5),      // bounded outbound retry before needs_review
+  // Inbound by Resend Receiving-API polling (D21.1) — the default local/MVP mode (no webhook/URL/tunnel).
+  // Active when RESEND_API_KEY + EMAIL_SIGNING_KEY are set and this is not 'false'. The webhook stays
+  // available but is OFF unless RESEND_WEBHOOK_SECRET is set.
+  RESEND_POLLING_ENABLED: z.string().default('true').transform((v) => v.toLowerCase() !== 'false' && v !== '0'),
+  RESEND_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
   // Slice 007 resilience (D13/D15/D16). The global "AI paused" switch → requests park held_budget.
   AI_PAUSED: z.string().default('false').transform((v) => v.toLowerCase() === 'true' || v === '1'),
   // Circuit breaker around the model call: open after N consecutive failures for a cooldown.

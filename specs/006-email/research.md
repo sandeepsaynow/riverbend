@@ -89,3 +89,22 @@ and treat unknown shapes defensively. Source: webhooks/event-types.
   verification; a fake receiving client returns canned `{text,html,to,message_id}` so correlation,
   de-dup, one-round, and quote-stripping are asserted without any network call.
 - Mocked SDK tests are labelled **deterministic integration**, never evidence of real delivery (Phase K).
+
+## Polling-mode extension (D21.1 — local/MVP inbound by Resend API polling, 2026-11-04)
+Verified against installed `resend@6.37.0` TS defs + docs (api-reference/emails/list-received-emails):
+- **`resend.emails.receiving.list({ limit?, after?, before? })`** → `{ data: { object:'list', has_more:boolean,
+  data: ListReceivingEmail[] }, error }`. `ListReceivingEmail` = the GET shape **without** `html/text/headers/
+  raw/object` — i.e. it carries `id, to[], from, created_at, subject, bcc, cc, reply_to, received_for[],
+  message_id, attachments[]`. `limit` 1–100 (omit → all in one response). `after`/`before` take an **email id**
+  (exclusive); mutually exclusive.
+- **Ordering, retention, and a per-endpoint rate limit are NOT stated** in the docs. Consequences for us:
+  - Ordering unknown → we do **not** rely on it. **De-dup by the received email `id`** (via `email_events`,
+    unique) is the source of truth: each email is fetched + correlated exactly once regardless of order.
+  - We still persist a durable high-water (`email_poll_state.last_created_at` + `last_email_id`) and bound
+    each tick to `maxPages` × `limit`; the scan overlaps and dedups rather than trusting a strict cursor.
+  - Retention unknown → **assumption:** recently received emails remain listable; at a 60s default interval
+    this is safe for a dev/MVP reviewer. If an email aged out of the list before any poll it would be missed
+    — production should prefer webhooks (lower latency, push-delivered). Documented, not fabricated.
+- Content is still fetched with `resend.emails.receiving.get(id)` (unchanged); general API rate limit is
+  10 req/s per team → 429 (earlier research), so a tick makes 1 list/page + 1 get/new-email, bounded.
+- The official **`resend-cli`** is NOT needed in polling mode (no public URL / webhook / tunnel).

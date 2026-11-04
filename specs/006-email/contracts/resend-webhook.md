@@ -35,3 +35,17 @@ headers }, { idempotencyKey: rb-followup-<request_id> })` → `{ data:{id}, erro
 classify: permanent (validation/invalid recipient) → throw `PermanentSendError`; transient (rate_limit/
 server/network) → throw `TransientSendError`. `relayPending` maps permanent/exhausted → `failed` +
 `needs_review`; transient → keep `pending` + backoff.
+
+## Polling contract (D21.1 — `EmailService.pollOnce(lister)`, default local/MVP)
+Driven by a pg-boss self-rescheduling singleton job every `RESEND_POLL_INTERVAL_SECONDS` (worker). Steps:
+1. **Claim lease** `UPDATE email_poll_state SET claimed_until=now()+lease WHERE id AND (claimed_until IS NULL
+   OR claimed_until<=now()) RETURNING …` — 0 rows ⇒ another poller holds it ⇒ `{skipped:true}` (FR-018).
+2. **Walk pages** `receiving.list({limit, after})` up to `maxPages`; for each email `ingestEvent('poll:'+id,
+   'email.received', id)` (dedup by id, persisted **before** advancing — FR-017); track newest `created_at`.
+3. **Advance checkpoint** (`last_created_at`,`last_email_id`) + release lease, only after a clean walk.
+4. On any list/API error: release the lease, **do not** advance; re-throw so the job fails and the next tick
+   retries (FR-019). Discovered ids are already durable and de-dup on retry.
+
+The worker then runs `processPendingEvents(receiving)` (same as webhook mode) → `receiving.get(id)` →
+`handleInbound` (signed-token correlation, Message-ID dedup, one-round, cross-tenant rejection). Polling and
+webhook can coexist; a given email ingested by both paths yields one work effect (Message-ID dedup).

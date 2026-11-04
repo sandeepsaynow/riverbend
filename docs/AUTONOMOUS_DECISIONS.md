@@ -140,3 +140,16 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   verified sending domain — recorded as BLOCKED with exact manual steps, never fabricated.
 - **Door:** two-way — the transport and the webhook verifier are ports; a future provider swap touches
   only the adapters (`ResendTransport`, `SvixVerifier`, `ResendReceiving`).
+
+## 2026-11-04 — Feature 006 (D21.1): Resend API polling for local/MVP inbound
+
+- **Decision:** default local/MVP inbound = **poll the Resend Receiving API** (no webhook/URL/tunnel);
+  keep the D21 Svix webhook as an optional production mode (off unless `RESEND_WEBHOOK_SECRET` set).
+- **Reuse:** the poller only *discovers* email ids into `email_events`; the existing
+  `processPendingEvents` + `handleInbound` do content fetch + correlation + dedup + one-round — unchanged.
+  pg-boss drives a self-rescheduling singleton job; a durable DB lease is the single-flight guard.
+- **Honesty:** ordering + retention are undocumented by Resend → dedup-by-id is authoritative and the
+  retention assumption is documented (webhooks preferred for production). All 9 new tests are deterministic
+  (fake lister/content), explicitly provider-API integration — NOT proof of real customer-email delivery.
+- **Scope held:** no new service/frontend/Redis/scheduler dep; auth, pricing, LiteLLM, tenant isolation,
+  AI extraction untouched. **Door:** two-way — polling + webhook are independent adapters over one pipeline.

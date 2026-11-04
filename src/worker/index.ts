@@ -1,7 +1,7 @@
 import { loadConfig } from '../platform/config/index.js';
 import { createLogger } from '../platform/observability/logger.js';
 import { Db } from '../platform/db/index.js';
-import { INTAKE_DLQ, INTAKE_QUEUE, PIPELINE_DLQ, PIPELINE_QUEUE } from '../platform/queue/index.js';
+import { EMAIL_POLL_QUEUE, INTAKE_DLQ, INTAKE_QUEUE, PIPELINE_DLQ, PIPELINE_QUEUE } from '../platform/queue/index.js';
 import { PgBossQueue } from '../platform/queue/pgboss-adapter.js';
 import { FakeGateway } from '../platform/llm/fake-gateway.js';
 import { LiteLlmGateway } from '../platform/llm/litellm-gateway.js';
@@ -12,7 +12,7 @@ import { LiteLlmAdmin, LiteLlmProvisioner } from '../modules/budget/litellm-admi
 import { OrdersService } from '../modules/orders/index.js';
 import { EmailService } from '../modules/email/index.js';
 import { InMemoryEmailTransport, ResendTransport, type EmailTransport } from '../modules/email/transport.js';
-import { ResendReceiving, type ReceivingClient } from '../modules/email/receiving.js';
+import { ResendReceiving, type ReceivingClient, type ReceivingLister } from '../modules/email/receiving.js';
 import { processRequest } from './processor.js';
 import { handleExhausted, reconcileOnce } from './sweeper.js';
 
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
   const mailTransport: EmailTransport = config.RESEND_API_KEY
     ? new ResendTransport(config.RESEND_API_KEY, config.RESEND_FROM)
     : new InMemoryEmailTransport();
-  const receiving: ReceivingClient | undefined = config.RESEND_API_KEY ? new ResendReceiving(config.RESEND_API_KEY) : undefined;
+  const receiving: (ReceivingClient & ReceivingLister) | undefined = config.RESEND_API_KEY ? new ResendReceiving(config.RESEND_API_KEY) : undefined;
   if (email) logger.info({ provider: config.RESEND_API_KEY ? 'resend' : 'in-memory' }, 'email enabled');
 
   const queue = new PgBossQueue({
@@ -135,6 +135,18 @@ async function main(): Promise<void> {
   };
   await reconcileOnce(db, queue);
   const timer = setInterval(runReconcile, config.RECONCILER_INTERVAL_MS);
+
+  // Inbound by Resend Receiving-API polling (006/D21.1) — the default local/MVP inbound path (no webhook,
+  // URL, or tunnel). A self-rescheduling pg-boss singleton discovers new emails, then the existing
+  // event-drain fetches content + correlates. Off unless RESEND_POLLING_ENABLED + RESEND_API_KEY + email.
+  if (email && receiving && config.RESEND_POLLING_ENABLED && config.RESEND_API_KEY) {
+    await queue.workPoll(EMAIL_POLL_QUEUE, config.RESEND_POLL_INTERVAL_SECONDS, async () => {
+      const r = await email.pollOnce(receiving);
+      if (!r.skipped) await email.processPendingEvents(receiving);
+    });
+    await queue.schedulePoll(EMAIL_POLL_QUEUE, 0); // kick immediately; singletonKey dedups across restarts
+    logger.info({ intervalSeconds: config.RESEND_POLL_INTERVAL_SECONDS }, 'resend inbound polling enabled');
+  }
 
   logger.info('worker started: intake + ai-pipeline + dead-letter + reconciler (ids only)');
 

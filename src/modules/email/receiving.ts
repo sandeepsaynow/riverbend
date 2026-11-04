@@ -17,11 +17,29 @@ export interface ReceivingClient {
   get(emailId: string): Promise<ReceivedEmail>;
 }
 
-/** Live adapter over `resend.emails.receiving.get(id)`. */
-export class ResendReceiving implements ReceivingClient {
+/** One entry from the Receiving list (metadata only — no body; content via `get`). */
+export interface ReceivedEmailSummary {
+  id: string; // Resend receiving email id — the poll de-dup key + the cursor value
+  messageId: string;
+  createdAt: string;
+}
+/** List capability for polling-mode inbound (D21.1). Separate from `ReceivingClient` so webhook-only
+ *  consumers (and their tests) don't depend on `list`. `ResendReceiving` implements both. */
+export interface ReceivingLister {
+  list(after?: string, limit?: number): Promise<{ emails: ReceivedEmailSummary[]; hasMore: boolean }>;
+}
+
+/** Live adapter over `resend.emails.receiving` (`get` + `list`). */
+export class ResendReceiving implements ReceivingClient, ReceivingLister {
   private readonly client: Resend;
   constructor(apiKey: string) {
     this.client = new Resend(apiKey);
+  }
+  async list(after?: string, limit = 100): Promise<{ emails: ReceivedEmailSummary[]; hasMore: boolean }> {
+    const { data, error } = await this.client.emails.receiving.list({ limit, ...(after ? { after } : {}) });
+    if (error || !data) throw new Error('receiving.list failed'); // no PII logged (VII)
+    const emails = data.data.map((e) => ({ id: e.id, messageId: e.message_id, createdAt: e.created_at }));
+    return { emails, hasMore: data.has_more };
   }
   async get(emailId: string): Promise<ReceivedEmail> {
     const { data, error } = await this.client.emails.receiving.get(emailId);

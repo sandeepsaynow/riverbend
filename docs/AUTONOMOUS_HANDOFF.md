@@ -8,9 +8,9 @@
 identity schema · `df78289` 008 reconstruction + 010 spec/D20 · `dbd5706` 009 · `a77fc3e` eval guards.
 Nothing pushed; no deploys.
 
-**Verification (2026-11-04, after the D21 Resend migration):** `npm run typecheck` ✅ · `npm run lint` ✅
-(0 violations, 90 modules) · `npx vitest run` → **129 passed / 129** (22 files, real PostgreSQL via
-Testcontainers; Docker required) · `docker compose config` ✅ · `terraform validate` ✅.
+**Verification (2026-11-04, after D21 Resend migration + D21.1 inbound polling):** `npm run typecheck` ✅ ·
+`npm run lint` ✅ (0 violations, 91 modules) · `npx vitest run` → **138 passed / 138** (23 files, real
+PostgreSQL via Testcontainers; Docker required) · `docker compose config` ✅ · `terraform validate` ✅.
 **No known test failures.**
 
 **Features 001–010 all implemented + committed.** 001 foundation · 002 intake/queue · 003 AI pipeline
@@ -53,6 +53,13 @@ Testcontainers; Docker required) · `docker compose config` ✅ · `terraform va
   by svix-id) → 200; worker `processPendingEvents(ResendReceiving)` fetches content via
   `emails.receiving.get` → existing `reply+<token>@` correlation + Message-ID dedupe + one-round. Delivery
   events update a monotonic `delivery_status`.
+- **Inbound mode (D21.1):** DEFAULT local/MVP is **Resend API polling** (no webhook/URL/tunnel) — a pg-boss
+  self-rescheduling singleton (`EMAIL_POLL_QUEUE`) runs `EmailService.pollOnce(ResendReceiving)` every
+  `RESEND_POLL_INTERVAL_SECONDS` (default 60), discovering ids into `email_events` (durable lease +
+  `email_poll_state`, migration `11100`); the same `processPendingEvents` drains them. The webhook above is
+  OPTIONAL (off unless `RESEND_WEBHOOK_SECRET` set). Files: `receiving.ts` (`ReceivingLister.list`),
+  `email/index.ts` (`pollOnce`), `pgboss-adapter.ts` (`workPoll`/`schedulePoll`). Tests:
+  `tests/integration/email-poll.test.ts` (9).
 - Queue handling unchanged: resumption inserts `job_outbox` → relay → pg-boss → pipeline re-runs (keyed
   `extract-reply`).
 - Removed: `mailpit` compose service, `nodemailer`, `MailpitTransport`, `src/api/email-webhook.ts`,
@@ -69,8 +76,9 @@ Testcontainers; Docker required) · `docker compose config` ✅ · `terraform va
   OPENAI_API_KEY, LITELLM_MASTER_KEY, LLM_BASE_URL, LLM_MODEL, LLM_API_KEY, BUDGET_AUTHORITY.
 - **MISSING from `.env` (needed to run the respective feature live; see `.env.example`):**
   `BETTER_AUTH_SECRET` + `BETTER_AUTH_URL` (portal), `EMAIL_SIGNING_KEY` + `RESEND_API_KEY` +
-  `RESEND_WEBHOOK_SECRET` + `RESEND_FROM` + `RESEND_REPLY_DOMAIN` (email, **D21**; the old
-  `EMAIL_WEBHOOK_SECRET`/`MAIL_*` names are gone), `LLM_MASTER_KEY` (native-budget provisioning — note
+  `RESEND_FROM` + `RESEND_REPLY_DOMAIN` (email, **D21**; default inbound is **polling, D21.1** — needs no
+  webhook. `RESEND_WEBHOOK_SECRET` is OPTIONAL, only for the push webhook; `RESEND_POLL_INTERVAL_SECONDS`
+  optional/default 60. The old `EMAIL_WEBHOOK_SECRET`/`MAIL_*` names are gone), `LLM_MASTER_KEY` (native-budget provisioning — note
   `.env` has `LITELLM_MASTER_KEY` but the worker reads `LLM_MASTER_KEY`), `WEB_FORM_SIGNING_KEY` (web
   form). All are optional/fail-closed.
 - `.env` is git-ignored and NOT tracked; `.env.example` documents every name with safe placeholders.

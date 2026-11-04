@@ -55,12 +55,23 @@ defences, and a bot check behind a Turnstile interface (offline fake passes). St
 
 ### Email (006)
 
-Set `EMAIL_SIGNING_KEY` + `RESEND_API_KEY` (and `RESEND_WEBHOOK_SECRET` for inbound). The worker emails
-the one clarification question through **Resend** (D21); replies arrive at the Svix-signed
-`POST /webhooks/resend` and resume the request. Offline (no keys) uses an in-memory no-op transport. See
-`specs/006-email/quickstart.md` for domain-free local testing with the `resend` CLI. Customer replies
-arrive at the Svix-signed inbound webhook `POST /webhooks/resend`, whose full content is fetched from the
-Receiving API, correlated by the signed token, de-duplicated, and resumed through the pipeline.
+Set `EMAIL_SIGNING_KEY` + `RESEND_API_KEY`. The worker emails the one clarification question through
+**Resend** (D21). Offline (no keys) uses an in-memory no-op transport. Inbound replies arrive by one of
+two modes; both fetch full content from the Receiving API, correlate by the signed `reply+<token>@`,
+de-duplicate (Message-ID), and resume the pipeline:
+
+1. **Resend API polling (default local/MVP, D21.1) — no public URL, webhook, or tunnel.** The worker lists
+   received emails every `RESEND_POLL_INTERVAL_SECONDS` (default 60), discovers new ones, and processes
+   them. On by default when `RESEND_API_KEY` + `EMAIL_SIGNING_KEY` are set. **Reviewer demo:** trigger a
+   clarification in-app, then reply from any mailbox to the `reply+<token>@<id>.resend.app` address — within
+   a poll interval the worker resumes the request and the staff console shows the update.
+2. **Webhooks (optional, production — lower latency).** Set `RESEND_WEBHOOK_SECRET` + a dashboard webhook to
+   `POST <public-url>/webhooks/resend` (Svix-verified). Pushes `email.received` immediately. May run
+   alongside polling (Message-ID dedup → one effect).
+
+This exercises the **real Resend provider API** (list + retrieve); it is provider-API integration testing,
+distinct from complete customer-email delivery (which needs a verified sending domain). See
+`specs/006-email/quickstart.md`.
 
 ### Evaluation (008)
 

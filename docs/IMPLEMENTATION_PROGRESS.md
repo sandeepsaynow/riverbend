@@ -133,3 +133,16 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
 - **BLOCKED (external):** real-provider verification (TEST C, full two-way customer round) needs
   `RESEND_API_KEY` + `RESEND_WEBHOOK_SECRET` + a verified sending domain + public webhook URL. Exact
   manual steps in `specs/006-email/quickstart.md`. Not fabricated.
+
+## CHECKPOINT 2026-11-04 (D21.1) — Feature 006 inbound polling (default local/MVP)
+
+- **Completed + verified:** pg-boss self-rescheduling singleton poll job (`EMAIL_POLL_QUEUE`),
+  `EmailService.pollOnce` + durable lease (`email_poll_state`, migration `11100`), `ResendReceiving.list`
+  pagination, discovery → existing `processPendingEvents` drain. Webhook preserved, off unless
+  `RESEND_WEBHOOK_SECRET` set. Config +`RESEND_POLLING_ENABLED`/`RESEND_POLL_INTERVAL_SECONDS`. Spec Kit 006
+  amended (research/spec/plan/data-model/contracts/tasks/quickstart/checklist D21.1 sections). Docs +
+  D21.1 reconciled. `typecheck`+`lint` clean; `vitest` **138/138** (9 new polling tests, real PostgreSQL);
+  `docker compose config` ok (api/db/worker). No live provider calls.
+- **BLOCKED (external):** real end-to-end with a live Resend account (send to a `<id>.resend.app` address and
+  observe a real poll) needs `RESEND_API_KEY` + a receiving address; full customer-delivery round needs a
+  verified sending domain. Steps in `specs/006-email/quickstart.md`. Not fabricated.

@@ -1,7 +1,19 @@
 import type { Db } from '../../platform/db/index.js';
 import { mintReplyToken, readReplyToken } from './tokens.js';
 import { PermanentSendError, type EmailTransport } from './transport.js';
-import type { ReceivingClient } from './receiving.js';
+import type { ReceivingClient, ReceivingLister } from './receiving.js';
+
+export interface PollResult {
+  skipped?: true; // another poller holds the lease
+  discovered?: number; // newly-seen emails recorded this tick
+  scanned?: number; // emails examined this tick (incl. already-seen)
+  pages?: number;
+}
+export interface PollOptions {
+  maxPages?: number; // bound the scan per tick (default 10)
+  pageLimit?: number; // Resend list page size, 1–100 (default 100)
+  leaseSeconds?: number; // single-flight lease duration (default 55)
+}
 
 export interface EmailConfig {
   signingKey: string;
@@ -189,6 +201,66 @@ export class EmailService {
       }
     }
     return { processed, ignored, errored };
+  }
+
+  /**
+   * Poll the Resend Receiving API for new inbound emails (D21.1 — the default local/MVP inbound path; no
+   * webhook/URL/tunnel). Single-flight via a durable DB lease; discovers each email id into `email_events`
+   * (de-dup by id) BEFORE advancing the checkpoint; paginates with bounded pages; order-independent (dedup
+   * is the source of truth). The worker then runs `processPendingEvents` to fetch content + correlate. On a
+   * list/API error the lease is released WITHOUT advancing and the tick fails so the next one retries.
+   */
+  async pollOnce(lister: ReceivingLister, opts: PollOptions = {}): Promise<PollResult> {
+    const maxPages = opts.maxPages ?? 10;
+    const pageLimit = opts.pageLimit ?? 100;
+    const leaseSeconds = opts.leaseSeconds ?? 55;
+
+    const claim = await this.tryClaimPoll(leaseSeconds);
+    if (!claim) return { skipped: true };
+
+    let discovered = 0;
+    let scanned = 0;
+    let pages = 0;
+    let after: string | undefined;
+    let newest = claim.lastCreatedAt;
+    try {
+      while (pages < maxPages) {
+        const { emails, hasMore } = await lister.list(after, pageLimit);
+        pages++;
+        if (emails.length === 0) break;
+        for (const e of emails) {
+          scanned++;
+          // Persist the provider id BEFORE advancing the checkpoint (dedup makes rediscovery a no-op).
+          const res = await this.ingestEvent(`poll:${e.id}`, 'email.received', e.id);
+          if (res === 'accepted') discovered++;
+          if (!newest || e.createdAt > newest) newest = e.createdAt;
+          after = e.id;
+        }
+        if (!hasMore) break;
+      }
+      await this.db.adminQuery(
+        `UPDATE email_poll_state SET last_created_at=$1, last_email_id=$2, claimed_until=NULL, updated_at=now() WHERE id=true`,
+        [newest ?? null, after ?? claim.lastEmailId ?? null],
+      );
+      return { discovered, scanned, pages };
+    } catch (err) {
+      // Release the lease without advancing — discovered ids are durable and de-dup on the next tick.
+      await this.db.adminQuery(`UPDATE email_poll_state SET claimed_until=NULL, updated_at=now() WHERE id=true`);
+      throw err instanceof Error ? err : new Error('poll failed');
+    }
+  }
+
+  /** Atomically claim the single-flight poll lease; null if another poller holds it (FR-018). */
+  private async tryClaimPoll(leaseSeconds: number): Promise<{ lastCreatedAt: string | null; lastEmailId: string | null } | null> {
+    const r = await this.db.adminQuery<{ last_created_at: string | null; last_email_id: string | null }>(
+      `UPDATE email_poll_state
+          SET claimed_until = now() + ($1 || ' seconds')::interval, updated_at = now()
+        WHERE id = true AND (claimed_until IS NULL OR claimed_until <= now())
+        RETURNING last_created_at, last_email_id`,
+      [String(leaseSeconds)],
+    );
+    const row = r.rows[0];
+    return row ? { lastCreatedAt: row.last_created_at, lastEmailId: row.last_email_id } : null;
   }
 
   private async markEvent(id: string, status: EventResult, detail: string): Promise<void> {

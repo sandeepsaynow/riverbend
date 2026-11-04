@@ -52,3 +52,19 @@ client. Assert outbound send + idempotency + retry/park, Svix valid/invalid/miss
 verification, duplicate event (same svix-id) no-op, inbound fetch+correlate, wrong-shop/forged token
 rejected, one-question + duplicate-reply handling, delivery/bounce status transitions, no secret
 disclosure, RLS isolation intact, and the LiteLLM/orders regressions stay green.
+
+## Polling-mode extension (D21.1)
+- **`src/modules/email/receiving.ts`** — add `ReceivingLister` port (`list(after?, limit?)`) +
+  `ReceivedEmailSummary`; `ResendReceiving` implements both `ReceivingClient` (get) and `ReceivingLister`
+  (list). `ReceivingClient` is unchanged (webhook tests untouched).
+- **`src/modules/email/index.ts`** — add `pollOnce(lister, opts)` (lease claim → paginated discovery via
+  `ingestEvent('poll:'+id,…)` → advance checkpoint; release lease on error without advancing) + a private
+  `tryClaimPoll(leaseSeconds)`. Reuses `ingestEvent`/`processPendingEvents`/`handleInbound` unchanged.
+- **`src/platform/queue/pgboss-adapter.ts`** — add `workPoll(name, intervalSeconds, handler)` (singleton
+  queue, retryLimit 0, re-sends itself `startAfter: interval` with `singletonKey`) + `schedulePoll(name,
+  afterSeconds)`. New queue name `EMAIL_POLL_QUEUE` in `queue/index.ts`.
+- **`src/worker/index.ts`** — when `RESEND_POLLING_ENABLED` (default true) + `RESEND_API_KEY` + email +
+  receiving: register the poll job (pollOnce → processPendingEvents) and kick it (`schedulePoll(0)`).
+- **Config** — add `RESEND_POLLING_ENABLED` (bool, default true) + `RESEND_POLL_INTERVAL_SECONDS` (default 60).
+- **Migration `11100_email_poll.cjs`** — `email_poll_state` singleton (checkpoint + lease), global/admin-only.
+- Webhook path preserved; off locally unless `RESEND_WEBHOOK_SECRET` is set.

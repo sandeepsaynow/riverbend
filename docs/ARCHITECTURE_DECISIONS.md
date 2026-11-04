@@ -412,3 +412,27 @@ idempotency keys, and domain-free inbound testing — a single provider for both
 port 25, so a provider is required anyway (matches D10's rationale). **Why not** Mailgun/Mailpit/Gmail/IMAP/
 SMTP/separate microservice: rejected — one provider, no second service, HTTPS-only. **Door:** two-way (the
 transport + verifier are ports; a future provider swap touches only the adapters). See `specs/006-email/`.
+
+## D21.1 — Inbound by Resend Receiving-API polling (default local/MVP; webhook optional)
+
+**Pick:** For local development and the MVP, inbound replies are discovered by **polling the Resend
+Receiving API** instead of requiring a public webhook — so a reviewer needs **no public URL, webhook, or
+tunnel**. A **pg-boss self-rescheduling singleton job** runs every `RESEND_POLL_INTERVAL_SECONDS` (default
+60): it lists received emails (`resend.emails.receiving.list`, paginated with `limit`/`after`), discovers
+each email id into the existing `email_events` log (de-dup by id), then the existing `processPendingEvents`
+fetches content (`receiving.get`) and runs the unchanged correlation. The **signed webhook (D21) is
+preserved but off by default**, enabled only when `RESEND_WEBHOOK_SECRET` is set (production, lower latency);
+the two may run together — Message-ID de-dup yields one work effect.
+
+**Single-flight + durability:** a durable DB **lease** (`email_poll_state.claimed_until`) ensures only one
+poller runs at a time across instances (a second no-ops); the pg-boss singleton is a second guard. Each
+discovered id is persisted **before** the checkpoint advances, so overlapping scans, partial pages, and
+restarts never duplicate work (de-dup + the `awaiting_customer` one-round guard are the final gates). A
+list/API failure releases the lease without advancing and the next tick retries (bounded, interval-paced).
+
+**Known limits (documented, not fabricated):** Resend does not document received-email **ordering** (so
+correctness never depends on it — de-dup by id is authoritative) or **retention** (assumption: recent emails
+remain listable; at 60s this is safe for dev/MVP, and production should prefer webhooks). The general API
+rate limit is 10 req/s; a tick is bounded to `maxPages` list calls + one `get` per new email. **Door:**
+two-way — polling and webhook are independent inbound adapters over the same durable pipeline. See
+`specs/006-email/` (D21.1 sections).

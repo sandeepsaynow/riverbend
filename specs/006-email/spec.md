@@ -68,6 +68,28 @@ Mailpit sink is retired). Email is a side effect owned by **code**, behind an `E
   status (monotonic transitions). A delivered-API-200 is **not** treated as delivered until a
   `delivered` event arrives. Status is surfaced in the staff request view (010) where present.
 
+## Amendment requirements (D21.1 — inbound by Resend API polling; default local/MVP mode)
+- **FR-015 (polling discovery)**: when `RESEND_POLLING_ENABLED` (default true) **and** `RESEND_API_KEY` are
+  set, a **pg-boss scheduled, self-rescheduling singleton** job runs every `RESEND_POLL_INTERVAL_SECONDS`
+  (default 60). Each tick lists received emails via `resend.emails.receiving.list` and **discovers** each
+  email id into the existing `email_events` log; the existing `processPendingEvents` then fetches content
+  (`receiving.get`) and runs the unchanged correlation. No webhook, public URL, or tunnel is required
+  locally. The signed webhook (FR-011/FR-012) is preserved but **off unless `RESEND_WEBHOOK_SECRET` is set**.
+- **FR-016 (pagination + bounded scan)**: paginate with `limit`/`after` across multiple pages (bounded by
+  `maxPages`), handling more emails than a single page; results order is **unstated** so correctness never
+  depends on it.
+- **FR-017 (dedup + durable checkpoint)**: each discovered email's provider id is persisted (`email_events`
+  unique) **before** the checkpoint advances; de-dup by that id makes rediscovery a no-op, so overlapping
+  scans, partial pages, and restarts never duplicate work. A durable high-water (`email_poll_state`) bounds
+  the scan. Message-ID de-dup + the `awaiting_customer` one-round guard remain the final correctness gates.
+- **FR-018 (single-flight)**: a durable DB **lease** (`email_poll_state.claimed_until`) ensures only one
+  poller runs at a time across instances; a second concurrent poller no-ops. The pg-boss singleton job is a
+  second guard.
+- **FR-019 (resilience)**: a list/API failure releases the lease **without** advancing the checkpoint and
+  fails the tick; the next scheduled tick retries (bounded, interval-paced) — already-discovered ids stay
+  durable and de-dup on retry. 429/provider errors/restarts/partial pages are all safe. Retention of
+  received emails is **unstated by Resend**; at 60s this is safe for dev/MVP — production prefers webhooks.
+
 ## Invariants touched
 - I6 one round (first reply wins + `awaiting_customer` guard), I8 reply path. Isolation (I1) preserved:
   all email tables are shop-owned under forced RLS; correlation is tenant-scoped by the signed token.

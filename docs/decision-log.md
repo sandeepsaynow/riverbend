@@ -100,3 +100,21 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   one-round + monotonic delivery status — all deterministic (fake Resend client + real svix-signed
   fixtures), **no live provider calls**. Real-provider verification (TEST C) BLOCKED without credentials +
   a verified sending domain; manual steps in specs/006-email/quickstart.md.
+
+## 2026-11-04 — Feature 006 (D21.1): inbound by Resend API polling (default local/MVP)
+
+- **Add a polling inbound mode** so local/MVP needs no public URL, webhook, or tunnel. A pg-boss
+  self-rescheduling singleton job lists received emails (`emails.receiving.list`, paginated) every
+  `RESEND_POLL_INTERVAL_SECONDS` (default 60), discovers ids into `email_events` (dedup), and the existing
+  `processPendingEvents` fetches content + correlates. The D21 Svix webhook is **preserved but off unless
+  `RESEND_WEBHOOK_SECRET` is set** (production/low-latency); both may run (Message-ID dedup → one effect).
+- **Single-flight** via a durable lease (`email_poll_state.claimed_until`) + the pg-boss singleton; provider
+  id persisted before the checkpoint advances; order-independent (dedup authoritative); failures release the
+  lease and retry next tick. Ordering + retention are **unstated by Resend** — documented assumptions, not
+  fabricated. Full rationale in ARCHITECTURE_DECISIONS D21.1; design in specs/006-email/ (D21.1 sections).
+- **Env:** +`RESEND_POLLING_ENABLED` (default true), +`RESEND_POLL_INTERVAL_SECONDS` (default 60);
+  `RESEND_WEBHOOK_SECRET` now optional. Migration `11100_email_poll.cjs` (`email_poll_state`).
+- **Tests:** 138/138 (real PostgreSQL); 9 new polling tests — empty list, one reply e2e, multiple pages,
+  duplicate ids, retry-after-failure, worker restart, cursor persistence, single-flight lease, wrong-shop/
+  invalid/unrelated token, duplicate Message-ID, one-round. All deterministic (fake lister + fake content);
+  **no live provider calls**.

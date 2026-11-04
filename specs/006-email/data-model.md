@@ -38,3 +38,17 @@ identity tables, D20). Grants: `app_admin` only (worker uses the admin connectio
 ## Unchanged
 `inbound_emails` (per-shop Message-ID de-dup) and `follow_ups.reply_content/replied_at` are reused as-is.
 `job_outbox` resumption is unchanged (received reply → insert job → pg-boss → pipeline `extract-reply`).
+
+## `email_poll_state` — NEW (D21.1; global single-row poll checkpoint + lease; no shop_id, no PII)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bool PK DEFAULT true CHECK(id=true) | singleton row. |
+| `last_created_at` | timestamptz NULL | high-water of the newest discovered `created_at` (observability + bounded scan). |
+| `last_email_id` | text NULL | last discovered receiving id (cursor hint). |
+| `claimed_until` | timestamptz NULL | single-flight **lease**: a poller claims it (`now()+lease`); a second poller finds the row claimed and no-ops; expiry self-heals after a crash. |
+| `updated_at` | timestamptz NOT NULL DEFAULT now() | |
+
+Global (no `shop_id`, no PII) + `app_admin`-only — same class as `email_events`/Better-Auth tables (outside
+the shop_id→forced-RLS policy-check). Discovery reuses `email_events`: the poller inserts a row with
+`svix_id = poll:<receiving_id>` (dedup), `event_type='email.received'`, `resend_email_id=<id>`; the existing
+`processPendingEvents` drains it identically to a webhook-delivered event.

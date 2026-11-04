@@ -63,4 +63,28 @@ export class PgBossQueue implements JobQueue {
       }
     });
   }
+
+  /**
+   * Register a self-rescheduling singleton job (006/D21.1 inbound polling). A `singleton` queue + a
+   * `singletonKey` send mean at most one job exists/runs at a time (single-flight across instances, with
+   * the DB lease as a second guard). After each run — success or not — exactly one next run is queued
+   * `startAfter: intervalSeconds`, giving a configurable seconds interval without an extra scheduler dep.
+   */
+  async workPoll(name: string, intervalSeconds: number, handler: () => Promise<void>): Promise<void> {
+    await this.boss.createQueue(name, { policy: 'singleton', retryLimit: 0, expireInSeconds: this.expireInSeconds });
+    await this.boss.work(name, { batchSize: 1 }, async () => {
+      try {
+        await handler();
+      } catch {
+        // Swallow — the next scheduled tick retries (bounded, interval-paced). Details are logged by caller.
+      } finally {
+        await this.schedulePoll(name, intervalSeconds);
+      }
+    });
+  }
+
+  /** Queue one poll run after `afterSeconds`; `singletonKey` dedups so a restart never double-schedules. */
+  async schedulePoll(name: string, afterSeconds: number): Promise<void> {
+    await this.boss.send(name, {}, { startAfter: afterSeconds, singletonKey: name });
+  }
 }
