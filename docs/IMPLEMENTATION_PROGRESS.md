@@ -73,3 +73,16 @@ Credential lifecycle on the existing shop-API-key model: scopes (empty=unrestric
 rotation, masked listing, ids-only `credential_audit`. OpenAPI 3 + Swagger UI at `/docs` (non-prod).
 `make provision` for no-SQL local setup (idempotent). ADMIN_BOOTSTRAP_TOKEN unchanged. LiteLLM virtual
 keys never exposed. Tests: **112/112**. Spec: `specs/009-api-access-docs/spec.md`; decision: D19.
+
+## Feature 010 — staff auth portal (2026-11-04): SPEC + FOUNDATION only (honest)
+
+- **Spec Kit reconciliation done:** reconstructed `specs/008-eval-deploy/spec.md` (from real code, no
+  invented results); added `specs/010-staff-auth-portal/` spec + plan + tasks; D20 + decision-log.
+- **Verified foundation committed:** `shop_membership` + singleton `auth_bootstrap` migration + tests
+  (115/115, build green). Auth decision: **Better Auth 1.7.16 (MIT)**, pg adapter, admin() plugin.
+- **NOT implemented (large remaining effort; NOT fabricated):** Better Auth install (needs
+  `--legacy-peer-deps` — SvelteKit optional-peer/vite conflict), auth-schema migration, Express mount,
+  one-time admin init, admin + staff portal UI, ~40 auth/authz/UI tests, real-AI browser smoke. Exact
+  ordered steps in `specs/010-staff-auth-portal/tasks.md`. Reason: a full library-backed auth system +
+  server-rendered portal cannot be implemented AND verified in one session, and unverified auth code /
+  a fabricated browser smoke would violate the honesty mandate.

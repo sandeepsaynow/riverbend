@@ -2,8 +2,15 @@
 
 Status key: [x] done+verified · [~] scaffolded/not fully verified · [ ] not started.
 
+> **Progress 2026-11-04:** T010 done + verified (115/115). Everything Better-Auth-dependent is NOT
+> started (honest). **Install finding:** `npm i better-auth@1.7.16` fails ERESOLVE because better-auth
+> declares an *optional* peer on `@sveltejs/kit` (→ vite@8) that conflicts with our dev vite@5. Install
+> with `npm i better-auth@1.7.16 --legacy-peer-deps` (SvelteKit is unused; not a real conflict). Pin in
+> package-lock after.
+
 ## Phase 0 — Library + schema
-- [ ] T001 Install `better-auth@1.7.16` + `@better-auth/cli@1.4.21` (pinned in package-lock).
+- [ ] T001 Install `better-auth@1.7.16` + `@better-auth/cli@1.4.21` **with `--legacy-peer-deps`** (see
+      finding above); pin in package-lock.
 - [ ] T002 `src/platform/auth/better-auth.ts`: configure Better Auth (pg Pool adapter on a dedicated
       `auth` schema, `emailAndPassword` with signup disabled, `admin()` plugin, secret + baseURL +
       trustedOrigins, Secure cookies in prod).
@@ -13,9 +20,8 @@ Status key: [x] done+verified · [~] scaffolded/not fully verified · [ ] not st
 - [ ] T004 Verify the generated DDL matches the installed version's expectations (CLI against the config).
 
 ## Phase 1 — Riverbend identity binding
-- [ ] T010 Migration: `shop_membership` (user_id text, shop_id uuid FK, role text, status text,
-      unique(user_id, shop_id)) + `auth_bootstrap` single-row marker. RLS: membership has shop_id →
-      forced RLS + policies (tenant + admin), like other shop tables.
+- [x] T010 Migration `10000_staff_identity.cjs`: `shop_membership` + singleton `auth_bootstrap`, forced
+      RLS + policies, FKs/unique/checks. Tested (tests/integration/staff-identity.test.ts). ✅ verified.
 - [ ] T011 `AuthPortalService`: resolveMemberships(userId), activeMembership(userId, shopId),
       createStaff (allow-listed fields only), disableStaff, revokeSessions, replaceCredential.
 - [ ] T012 Admin-init path (bootstrap-token-gated, atomic single-use via `auth_bootstrap`): create first
