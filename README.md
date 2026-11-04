@@ -231,3 +231,5 @@ See also the 2-page [architecture note](docs/ARCHITECTURE_NOTE.md).
 > internal `catalog_version` is added.
 
 > **Portal login:** browse the canonical origin (`http://localhost:8080`, or `127.0.0.1:8080` in dev); login/create-staff/disable/logout carry a CSRF token automatically (D20.3). Scripting login with curl needs the CSRF flow — see docs/FINAL_MANUAL_TEST.md.
+
+> **Customer form (D24):** each form load uses a fresh operation id, so multiple requests from one browser all succeed; a double-click/retry dedupes. See docs/FINAL_MANUAL_TEST.md.

@@ -17,25 +17,39 @@ function cspPage(res: Response, nonce: string): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
 }
 
-function formPage(shopName: string, slug: string, formToken: string, nonce: string): string {
+function formPage(
+  shopName: string,
+  slug: string,
+  formToken: string,
+  nonce: string,
+  prefill?: { email?: string; description?: string; error?: string },
+): string {
+  const err = prefill?.error ? `<p role="alert" style="color:#b00">${escapeHtml(prefill.error)}</p>` : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Book a repair — ${escapeHtml(shopName)}</title>
 <style nonce="${nonce}">body{font:16px system-ui,sans-serif;max-width:34rem;margin:2rem auto;padding:0 1rem}
 label{display:block;margin:.75rem 0 .25rem;font-weight:600}input,textarea{width:100%;padding:.5rem;font:inherit;box-sizing:border-box}
 button{margin-top:1rem;padding:.6rem 1.2rem;font:inherit}.hp{position:absolute;left:-5000px}</style></head>
-<body><h1>${escapeHtml(shopName)}</h1><p>Tell us what your bike needs. We'll email you.</p>
+<body><h1>${escapeHtml(shopName)}</h1><p>Tell us what your bike needs. We'll email you.</p>${err}
 <form method="POST" action="/f/submit" id="f">
 <input type="hidden" name="form_token" value="${escapeHtml(formToken)}">
+<input type="hidden" name="slug" value="${escapeHtml(slug)}">
 <input type="hidden" name="submission_id" id="sid" value="">
 <input type="hidden" name="cf-turnstile-response" id="ts" value="offline-ok">
-<label for="email">Your email (required)</label><input id="email" name="email" type="email" required>
-<label for="description">What does your bike need? (required)</label><textarea id="description" name="description" rows="5" required></textarea>
+<label for="email">Your email (required)</label><input id="email" name="email" type="email" required value="${escapeHtml(prefill?.email ?? '')}">
+<label for="description">What does your bike need? (required)</label><textarea id="description" name="description" rows="5" required>${escapeHtml(prefill?.description ?? '')}</textarea>
 <div class="hp"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
 <button type="submit">Request a repair</button></form>
-<script nonce="${nonce}">(function(){var k='rb_sid_${escapeHtml(slug)}';var v=null;try{v=localStorage.getItem(k)}catch(e){}
-if(!v){v=(crypto.randomUUID&&crypto.randomUUID())||String(Date.now())+Math.random();try{localStorage.setItem(k,v)}catch(e){}}
-document.getElementById('sid').value=v;})();</script></body></html>`;
+<script nonce="${nonce}">(function(){
+// One FRESH operation id per form instance (D24). NOT persisted across submissions — a persistent id
+// reused for a new request was the bug. A double-click or network retry of THIS page resubmits the same
+// hidden value (idempotent); a new form load gets a new id; a Back/Forward (BFCache) restore regenerates.
+var el=document.getElementById('sid');
+function fresh(){return (window.crypto&&crypto.randomUUID&&crypto.randomUUID())||(String(Date.now())+Math.random());}
+el.value=fresh();
+window.addEventListener('pageshow',function(e){if(e.persisted)el.value=fresh();});
+})();</script></body></html>`;
 }
 
 function page(title: string, body: string, nonce: string): string {
@@ -101,20 +115,31 @@ export function registerWebRoutes(
         turnstileToken: body['cf-turnstile-response'] ?? '',
         ...(req.ip ? { remoteIp: req.ip } : {}),
       });
-      const link = `/f/status/${encodeURIComponent(result.statusToken)}`;
-      res.status(result.duplicate ? 200 : 202).type('html').send(
-        page('Request received', `<h1>Thanks — we've got it.</h1><p>We'll email you.</p>
-<p><a href="${link}">Track your request</a></p>`, nonce),
-      );
+      // Post/Redirect/Get (D24): a success redirects to a GET status page, so a browser refresh re-reads
+      // status instead of re-posting the form (a duplicate replay is harmless either way — same UUID).
+      res.redirect(303, `/f/status/${encodeURIComponent(result.statusToken)}`);
     } catch (err) {
       if (err instanceof HoneypotRejected) {
         res.status(204).end(); // look successful; persist nothing
         return;
       }
+      // Recoverable validation error: re-render the form with the user's input preserved + a fresh token.
+      // The client script mints a fresh submission id, so correcting and resubmitting is a clean new attempt.
+      if (err instanceof ValidationError) {
+        const slug = String(body.slug ?? '');
+        const shop = slug ? await deps.web.resolveShopBySlug(slug) : null;
+        if (shop) {
+          const token = deps.web.mintFormToken(shop.id);
+          res.status(422).type('html').send(formPage(shop.displayName, slug, token, nonce, {
+            email: body.email ?? '', description: body.description ?? '', error: err.message,
+          }));
+          return;
+        }
+      }
       const [status, msg] =
         err instanceof WebAuthError ? [401, 'Invalid or expired form.']
         : err instanceof ValidationError ? [422, escapeHtml(err.message)]
-        : err instanceof ConflictError ? [409, 'This submission was already received with different text.']
+        : err instanceof ConflictError ? [409, 'This request was already received. To send a new one, reopen the form (it will use a new reference).']
         : err instanceof TurnstileFailed ? [403, 'Bot check failed. Please try again.']
         : [500, 'Something went wrong.'];
       res.status(status as number).type('html').send(page('Could not submit', `<h1>Could not submit</h1><p>${msg as string}</p>`, nonce));
@@ -129,7 +154,8 @@ export function registerWebRoutes(
       res.status(404).type('html').send(page('Not found', '<h1>Request not found</h1>', nonce));
       return;
     }
-    res.status(200).type('html').send(page('Request status', `<h1>Request status</h1><p>Current state: <strong>${escapeHtml(st.state)}</strong></p>`, nonce));
+    const another = st.slug ? `<p><a href="/f/${encodeURIComponent(st.slug)}">Submit another repair request</a></p>` : '';
+    res.status(200).type('html').send(page('Request status', `<h1>Request status</h1><p>Current state: <strong>${escapeHtml(st.state)}</strong></p>${another}`, nonce));
   });
 
   app.use(r);

@@ -62,19 +62,20 @@ describe('005 web form — intake + defences', () => {
     expect(unknown.status).toBe(404);
   });
 
-  it('happy path → 202, refresh-safe idempotency, working status link (US1/FR-003)', async () => {
+  it('happy path → 303 PRG redirect, refresh-safe idempotency, working status link (US1/FR-003, D24)', async () => {
     const form_token = await getToken();
-    const body = { form_token, email: 'rider@example.com', description: 'my chain keeps slipping', submission_id: 'web-uuid-1', website: '', 'cf-turnstile-response': 'ok' };
+    const body = { form_token, slug: 'rb-web', email: 'rider@example.com', description: 'my chain keeps slipping', submission_id: 'web-uuid-1', website: '', 'cf-turnstile-response': 'ok' };
     const first = await request(app).post('/f/submit').type('form').send(body);
-    expect(first.status).toBe(202);
-    const link = /\/f\/status\/([^"]+)"/.exec(first.text)![1]!;
+    expect(first.status).toBe(303); // Post/Redirect/Get
+    const loc = first.headers['location'] as string;
+    expect(loc).toMatch(/^\/f\/status\//);
     const again = await request(app).post('/f/submit').type('form').send(body); // refresh/retry, same UUID
-    expect(again.status).toBe(200); // duplicate replay, not a new request
+    expect(again.status).toBe(303); // duplicate replay still redirects (not a new request)
     const n = await t.db.adminQuery<{ n: string }>(`SELECT count(*)::text AS n FROM messages WHERE source='web' AND submission_id='web-uuid-1'`);
-    expect(Number(n.rows[0]!.n)).toBe(1);
-    const status = await request(app).get(`/f/status/${link}`);
+    expect(Number(n.rows[0]!.n)).toBe(1); // exactly one persisted request
+    const status = await request(app).get(loc);
     expect(status.status).toBe(200);
-    expect(status.text).toContain('received');
+    expect(status.text).toContain('Submit another repair request'); // start a fresh operation
   });
 
   it('mandatory email: missing/invalid → 422 (I8, FR-002)', async () => {

@@ -179,3 +179,13 @@ These edge cases are introduced by our design, not the brief's dataset:
 | Genuinely unclear | vague/empty | exactly one clarification (I6) |
 - Unknown bike type / requested date are represented as absent (dateWords null) — never fabricated and
   never a clarification trigger on their own.
+
+## Customer-form operation id (D24)
+- The form mints a **fresh `submission_id` UUID per load** (never persisted). Reusing one browser to send a
+  second request used to fail (a localStorage-cached id reused with new content → backend 409); now each
+  load is a new operation, while a double-click / network retry of the SAME page dedupes (same id).
+- **Back/Forward (BFCache):** a restored, already-submitted form regenerates its id (`pageshow.persisted`)
+  so it can't replay a consumed id as a new request.
+- **Refresh after success:** PRG (303 → GET status) means a refresh re-reads status, not re-posts.
+- **Reuse of a consumed id with different content:** still a 409 conflict (backend dedup intact) — the UUID
+  is the operation key; the signed form token is separate (shop auth / anti-forgery).

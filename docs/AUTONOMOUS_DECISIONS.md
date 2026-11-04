@@ -217,3 +217,16 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   email; message/shop/contact preserved; reason shown in needs-attention. No DB migration.
 - **Evidence:** 8 real-PG tests (incl. unrelated-order-not-cancelled, cross-tenant, prompt-injection) + 1
   live OpenAI call (m-1038 → needs_review, 0 orders/emails). Idempotency/isolation/pricing/budgets intact.
+
+## 2026-11-04 — Feature 005 (D24): customer-form operation-id lifecycle (P0 idempotency)
+
+- **Traced the real request, not the screenshot:** the form cached the submission-id UUID in localStorage
+  per shop and reused it forever (web-routes.ts:36–38); the 2nd+ request reused a consumed id with new
+  content → backend 409 ("already received with different text"); incognito (empty localStorage) worked.
+- **Smallest fix (keep the client-generated-UUID design):** fresh UUID per form load, never persisted;
+  regenerate on BFCache restore; Post/Redirect/Get on success; input-preserving validation re-render. The
+  UUID is the operation key; the signed form token (shop auth/anti-forgery) stays separate. Backend dedup,
+  CSRF, signing unchanged; key not rotated; no schema change.
+- **Evidence:** 7 real-PG regression tests (persistent agent) + a form-HTML regression guard (no
+  localStorage reuse). Live: 4 same-browser cross-shop submissions distinct & accepted; reuse of a consumed
+  id with different content → 409. 196/196.

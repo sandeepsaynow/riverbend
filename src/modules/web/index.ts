@@ -81,11 +81,14 @@ export class WebService {
     };
   }
 
-  /** Read status for a signed status token (no shop secret; tenant-scoped by the embedded shop id). */
-  async status(token: string): Promise<{ state: string } | null> {
+  /** Read status for a signed status token (no shop secret; tenant-scoped by the embedded shop id).
+   *  Returns the shop `slug` too, so the status page can link back to a FRESH form (new operation id). */
+  async status(token: string): Promise<{ state: string; slug: string | null } | null> {
     const parsed = readStatusToken(this.deps.signingKey, token);
     if (!parsed) return null;
     const st = await this.intake.getRequestStatus(parsed.shopId, parsed.requestId);
-    return st ? { state: st.state } : null;
+    if (!st) return null;
+    const s = await this.db.adminQuery<{ slug: string }>(`SELECT slug FROM shops WHERE id = $1`, [parsed.shopId]);
+    return { state: st.state, slug: s.rows[0]?.slug ?? null };
   }
 }

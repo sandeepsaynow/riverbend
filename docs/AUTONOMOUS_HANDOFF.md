@@ -252,3 +252,9 @@ prompt (litellm-gateway.ts) + mirrored in FakeGateway. +11 tests → 181/181; li
 (`cancellation_requires_verification`); no order, no auto-cancel, no clarification email; ownership never
 inferred from email/similarity (human verifies). Added `cancellation` to REQUEST_KINDS (Zod + LiteLLM
 json_schema enum — unified). No migration. 189/189; live m-1038 → needs_review, 0 orders/emails.
+
+**CUSTOMER-FORM IDEMPOTENCY (2026-11-04, D24):** the form minted the submission-id UUID once and
+cached it in localStorage per shop, reusing it forever → 2nd+ requests hit the backend dedup (409). Fixed:
+FRESH UUID per form load (never persisted) + BFCache regenerate + Post/Redirect/Get + input-preserving
+validation re-render. Backend dedup/CSRF/signing unchanged; key not rotated. 196/196; live 4-submission
+same-browser cross-shop acceptance + UUID-reuse-conflict verified.

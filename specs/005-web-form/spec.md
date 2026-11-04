@@ -40,3 +40,16 @@ defences. No new pipeline behaviour — it feeds `source='web'` into `IntakeServ
 - Double-submit same UUID → one request; missing email → 422; honeypot filled → rejected (no request);
   forged token → 401; oversize → 422; Turnstile fail → 403; happy path → confirmation + working status
   link; the form page is served with a CSP header.
+
+## Amendment (D24, 2026-11-04) — operation-id lifecycle (P0 idempotency fix)
+- **FR-W-idem1:** the form mints ONE fresh `submission_id` UUID **per form load** (`crypto.randomUUID`),
+  never persisted across submissions. A double-click / network-timeout retry of the same loaded form
+  resubmits the same id (idempotent); a new load (or the status page's "Submit another repair request"
+  link) is a new operation. The id is NOT bound to the browser, email, shop, or the signed form token.
+- **FR-W-idem2:** a Back/Forward (BFCache) restore regenerates the id (`pageshow`/`event.persisted`) so a
+  restored, already-submitted form cannot replay a consumed id.
+- **FR-W-idem3:** success uses **Post/Redirect/Get** (303 → GET status) so a refresh re-reads status rather
+  than re-posting. A recoverable validation error re-renders the form with the user's input preserved + a
+  fresh token + a fresh operation id.
+- **FR-W-idem4:** backend deduplication (Feature 002: `(shop, source, submissionId)`), CSRF, and signed-form
+  protection are unchanged; reuse of a consumed id with different content remains a 409 conflict.

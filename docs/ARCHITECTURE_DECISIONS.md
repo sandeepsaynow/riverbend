@@ -584,3 +584,31 @@ person to verify and act — preserving the original message, shop, and customer
 isolation (RLS), catalog pricing (I5) and LiteLLM budgets are untouched. **Verified live:** m-1038 →
 `needs_review`/`cancellation_requires_verification`, 0 orders/clarifications/emails. **Door:** two-way
 (prompt + schema enum + one decide branch; no migration). Refines D22; see `specs/003-ai-pipeline/`.
+
+## D24 — Customer-form operation-id lifecycle (fresh per submission; amends D11)
+
+**Bug (real browser):** in a normal (non-incognito) Chrome, the first customer request succeeded but every
+later one — even with a different email/description/shop — was rejected "already received with different
+text"; incognito worked. **Root cause (`src/api/web-routes.ts`, old lines 36–38):** the form's inline
+script stored the `submission_id` operation UUID in **`localStorage` keyed per shop (`rb_sid_<slug>`) and
+reused it forever**. After the first submit consumed that UUID, the next (genuinely new) request reused it
+with different content → the backend idempotency check (`IntakeService.submit` on
+`(shop, source='web', submissionId)`, correct and unchanged) returned `ConflictError` → 409. Incognito had
+empty `localStorage` → a fresh UUID → worked.
+
+**Fix (smallest; keeps the client-generated-UUID design):** the form now mints **one fresh UUID per form
+load** (`crypto.randomUUID()`), never persisted across submissions, and **regenerates on BFCache restore**
+(`pageshow`/`event.persisted`) so a Back/Forward-restored, already-submitted form can't reuse a consumed id.
+A double-click or network-timeout retry of the SAME live page resubmits the same hidden value → idempotent
+replay; a new form load (or the "Submit another repair request" link on the status page) is a new operation.
+Added **Post/Redirect/Get** (success → 303 → GET status page) so a refresh re-reads status instead of
+re-posting, and **input-preserving re-render** on a recoverable validation error (email/description kept, a
+fresh signed token + a fresh operation id on retry).
+
+**Form signing vs. idempotency (kept distinct):** the signed `form_token` authenticates the shop + binds
+the form to a signing key (CSRF/anti-forgery); the `submission_id` is the operation identity for
+deduplication. They are independent — the UUID is **not** bound to the browser, email, shop, or the signed
+token. **Backend deduplication, CSRF, and signed-form protections are unchanged**; WEB_FORM_SIGNING_KEY is
+not rotated. **Verified live:** four sequential same-browser submissions across all three shops each got a
+distinct id and succeeded (303); reusing a consumed id with different content still returns 409. **Door:**
+two-way (client lifecycle + PRG; no schema change). See `specs/005-web-form/`.

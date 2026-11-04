@@ -253,3 +253,15 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
   typecheck + lint clean; compose valid.
 - **Live (post-fix, dated single-message re-run; 40-message history preserved):** m-1038 → `needs_review` /
   `cancellation_requires_verification`, `kind=cancellation`, 0 work orders / 0 follow-ups / 0 emails.
+
+## CHECKPOINT 2026-11-04 (D24) — customer-form operation-id lifecycle (P0 idempotency bug fixed)
+
+- **Root cause:** the form persisted the submission-id UUID in localStorage per shop and reused it forever
+  (web-routes.ts) → every post-first request reused a consumed id with new content → backend 409; incognito
+  worked. **Fix:** fresh UUID per form load (never persisted) + BFCache regenerate (`pageshow.persisted`) +
+  Post/Redirect/Get (303 → status) + input-preserving validation re-render. Backend `(shop,source,submission_id)`
+  dedup, CSRF, and signed-form protection unchanged; key not rotated; no schema change.
+- **Tests:** tests/integration/web-idempotency.test.ts (7, persistent agent) + updated web.test PRG path.
+  Full suite **196/196**; typecheck + lint clean; compose valid.
+- **Live (deterministic, no paid AI):** four sequential same-browser submissions across Downtown/Northside/
+  Lakeshore each got a distinct id and were accepted (303); reusing a consumed id with different content → 409.

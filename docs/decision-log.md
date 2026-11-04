@@ -170,3 +170,13 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   Ownership is never inferred from email/similarity — a person verifies. No DB migration. ARCHITECTURE_
   DECISIONS D23. 8 real-PG tests + 1 live OpenAI call (m-1038 → needs_review, 0 orders/emails). 189/189.
   Post-fix m-1038 recorded as a dated single-message re-run in docs/results-live.md (40-message history kept).
+
+## 2026-11-04 — Feature 005 (D24): customer-form operation-id lifecycle (P0 idempotency bug)
+
+- **Root cause:** the form cached the `submission_id` UUID in localStorage per shop and reused it forever
+  (web-routes.ts:36–38) → the 2nd+ request reused a consumed id with new content → backend 409. Incognito
+  (empty localStorage) worked. **Fix:** fresh UUID per form load (never persisted) + BFCache regenerate +
+  PRG (303 → status) + input-preserving validation re-render. Backend dedup/CSRF/signing unchanged; key not
+  rotated. ARCHITECTURE_DECISIONS D24 (amends D11). 7 new real-PG tests + the web happy-path updated to PRG;
+  live: 4 same-browser cross-shop submissions distinct & accepted, UUID-reuse-with-different-content → 409.
+  196/196.

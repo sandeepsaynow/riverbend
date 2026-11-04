@@ -327,3 +327,5 @@ requirements above:
 - The terminal-for-002 success state is `awaiting_pipeline` (intake complete, awaiting the AI pipeline); a
   request may instead park in a needs-attention state after exhausting recovery attempts. The full
   request state machine with AI outcomes arrives in slice 003.
+
+> **D24 (2026-11-04):** the customer form (002 idempotency / 005) mints a FRESH submission-id UUID per form load (never persisted) — a persistent localStorage id reused across submissions was a P0 bug. Backend `(shop, source, submission_id)` dedup unchanged. See ARCHITECTURE_DECISIONS D24.

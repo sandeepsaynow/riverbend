@@ -164,3 +164,5 @@ These require a human decision; see the dedicated section at the end of
 | P1 | **Catalog classification taxonomy** (D22): routine maintenance→TUNE_BASIC (no clarification), explicit overhaul→TUNE_FULL, diagnostic→GENERAL_INSPECT, specific fault→its code, price→price_inquiry, cancel→no order; one clarification only when genuinely unclear. | D3/D5 → D22 |
 
 | P1 | **Cancellation intent** (D23): cancel/change requests → needs_review (`cancellation_requires_verification`); no order, no auto-cancel, no clarification; ownership never inferred from email/similarity (human verifies). | D23 |
+
+| P0 | **Customer-form operation-id lifecycle** (D24): a fresh submission-id UUID per form load (never persisted), BFCache-safe, Post/Redirect/Get; backend `(shop,source,submission_id)` dedup unchanged. | D11 → D24 |

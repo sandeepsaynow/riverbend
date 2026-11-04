@@ -151,3 +151,5 @@ tests, the results table, the not-built list, and an honest README.
 and say so in the not-built list — a complete, honest answer to the brief.
 
 > **D23 (2026-11-04):** Feature 003 extraction adds a `cancellation` kind → needs_review (`cancellation_requires_verification`); no auto-cancel, no order, no clarification. See ARCHITECTURE_DECISIONS D23.
+
+> **D24 (2026-11-04):** Feature 005 customer form mints a fresh submission-id UUID per load (was persisted/reused → P0 409 bug); PRG + BFCache-safe. See ARCHITECTURE_DECISIONS D24.

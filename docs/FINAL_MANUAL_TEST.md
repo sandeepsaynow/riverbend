@@ -329,3 +329,13 @@ staff **Needs attention** view. It creates **no** work order, **never** auto-can
 sends **no** clarification email — a staff member verifies the customer actually owns the referenced order
 (ownership is never inferred from the email address or wording) and acts manually. There is deliberately no
 self-service cancellation/OTP flow.
+
+## Customer form — multiple submissions in one browser (D24)
+The repair form now mints a **fresh operation id per form load**, so you can submit several requests from
+the same (non-incognito) browser without the old "already received with different text" rejection:
+1. Open `/f/rb-downtown`, submit "My bike needs a basic tune-up." → success (redirects to a status page).
+2. Click **"Submit another repair request"** (or reopen the form), submit "My rear brake needs adjustment." → success.
+3. Open `/f/rb-northside`, submit "My chain needs replacing." → success. 4. `/f/rb-lakeshore`, "Please inspect my bicycle." → success.
+Each is a distinct accepted request under the correct shop. A **double-click or network retry of the same
+page** dedupes (one request). To prove the backend is intact, reuse a prior request's id with different text
+→ **409 conflict**. (Operation id = `submission_id` UUID; the signed `form_token` is separate shop-auth.)
