@@ -235,3 +235,9 @@ proven (records only a user it created; never adopts an email-matched account �
 staff creation never adopts a pre-existing account; CSRF validates an exact scheme://host:port allowlist
 (127.0.0.1 dev bug fixed). Migrations 12000+12100 (CHECK). +13 tests → 167/167. Better Auth still on the
 migrator DB role (documented prod gap: use a restricted role). Operator recovery in FINAL_MANUAL_TEST.md.
+
+**BROWSER-LOGIN 403 FIX (2026-11-04, D20.3):** root cause was Helmet default Referrer-Policy: no-referrer
+→ Origin: null on same-origin form POSTs → D20.2 guard 403. Fixed: Referrer-Policy strict-origin-when-cross-
+origin + origin-independent DOUBLE-SUBMIT CSRF token (HttpOnly SameSite=Lax rb_csrf cookie <-> hidden _csrf
+field) on all cookie-authed portal POSTs; logout GET->POST; /admin/init stays bootstrap-token auth (no CSRF).
+170/170; verified live (Origin:null+token->401, no token->403). See FINAL_MANUAL_TEST.md canonical-origin.

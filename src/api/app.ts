@@ -55,7 +55,10 @@ export interface AppDeps {
 /** Compose the HTTP app. Health is public; /admin requires an admin credential; /v1 a shop one. */
 export function createApp(deps: AppDeps): Express {
   const app = express();
-  app.use(helmet());
+  // Helmet's default Referrer-Policy is `no-referrer`, which makes browsers send `Origin: null` on ordinary
+  // same-origin form POSTs (MDN) — that was the browser-login 403. Use a referrer policy that preserves a
+  // real Origin for same-origin requests while still protecting cross-origin referrers (D20.3).
+  app.use(helmet({ referrerPolicy: { policy: 'strict-origin-when-cross-origin' } }));
 
   // Better Auth (010): mount its handler on the Express 5 catch-all BEFORE any body parser (per its
   // docs — it reads the raw request). Session-guarded portal routes are added further down.
@@ -89,6 +92,7 @@ export function createApp(deps: AppDeps): Express {
       db: deps.db,
       bootstrapToken: deps.config.ADMIN_BOOTSTRAP_TOKEN,
       trustedOrigins: trustedOriginsFor(deps.config.BETTER_AUTH_URL, deps.config.NODE_ENV === 'production'),
+      secureCookies: deps.config.NODE_ENV === 'production',
     });
   }
 

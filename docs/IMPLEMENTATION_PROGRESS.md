@@ -213,3 +213,18 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
   / foreign→403, completed-admin→409.
 - **Documented prod gap:** Better Auth runtime uses the migrator role; a dedicated restricted role is the
   production recommendation (not shipped unverified near submission).
+
+## CHECKPOINT 2026-11-04 (D20.3) — browser-login 403 fixed with production-grade CSRF
+
+- **Root cause:** Helmet default `Referrer-Policy: no-referrer` → `Origin: null` on same-origin browser form
+  POSTs → D20.2 origin guard 403'd them (curl masked it). **Fixed:** Referrer-Policy →
+  strict-origin-when-cross-origin + an origin-independent **double-submit CSRF token** (HttpOnly SameSite=Lax
+  `rb_csrf` cookie ⇔ hidden `_csrf` field) on all cookie-authed portal POSTs (login/create-staff/disable/
+  logout); exact-origin allowlist kept as defense-in-depth; logout migrated GET→POST; `/admin/init` stays
+  bootstrap-token-authed (no CSRF).
+- **Tests:** csrf-origin suite rewritten to two layers (origin + token) incl. the exact browser-403
+  regression (Origin: null + valid token → allowed); portal tests made CSRF-aware. Full suite **170/170**;
+  typecheck + lint clean; compose (default + overlay) valid. Live: Referrer-Policy header confirmed;
+  Origin:null no-token→403, +token→401; foreign→403.
+- **Prod note:** strict single HTTPS origin allowlist; Secure+SameSite cookies; set a trusted reverse-proxy
+  `trust proxy` before believing forwarded headers (documented gap).

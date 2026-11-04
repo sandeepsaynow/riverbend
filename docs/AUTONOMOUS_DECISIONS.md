@@ -179,3 +179,15 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
 - **Grounded:** verified live — 127.0.0.1 now allowed (401 not 403), foreign origin 403, completed-admin 409,
   migrations 12000+12100 (+CHECK) apply. DB-role boundary (Better Auth on migrator role) documented as a prod
   gap rather than shipping an unverified role migration near submission.
+
+## 2026-11-04 — Feature 010 (D20.3): browser-login 403 root cause + double-submit CSRF
+
+- **Did not blame the embedded browser.** Traced the 403 to Helmet's default `Referrer-Policy: no-referrer`
+  → `Origin: null` on same-origin form POSTs (MDN) → the D20.2 guard rejected it. curl (no Origin) masked it.
+- **Fix without weakening CSRF:** Referrer-Policy → strict-origin-when-cross-origin, plus an
+  origin-independent double-submit token (HttpOnly SameSite=Lax cookie ⇔ hidden field) on all cookie-authed
+  portal POSTs; exact-origin allowlist kept as defense-in-depth; logout GET→POST; /admin/init stays
+  bootstrap-token-authed (no CSRF). Never globally allowed null, never disabled CSRF, never wildcard CORS.
+- **Evidence:** live — Origin:null + token → 401 (passes), without token → 403; Referrer-Policy header
+  confirmed. Automated — the full session/create-staff/staff-login flow runs through the token flow (portal
+  test), plus a dedicated regression for the exact browser-403 scenario. 170/170.

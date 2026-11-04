@@ -159,3 +159,10 @@ These edge cases are introduced by our design, not the brief's dataset:
   email:** a real account is refused (not attached to a new shop); only a membership-less orphan is reconciled.
 - **Reply-token length:** `reply+<token>@` local part is always ≤ 64 octets (RFC 5321) via the compact
   binary token — asserted across 2000 random UUID pairs; strict providers (Resend) reject longer.
+
+## Portal CSRF / browser login (D20.3)
+- Helmet default `Referrer-Policy: no-referrer` makes browsers send `Origin: null` on same-origin form
+  POSTs → a host/origin-only CSRF check 403s legitimate logins (curl, sending no Origin, hides it). Fixed by
+  a referrer policy that keeps a real same-origin Origin **and** an origin-independent double-submit token
+  (HttpOnly SameSite=Lax cookie ⇔ hidden field) that works even with `Origin: null`; foreign origins still 403.
+- Logout as GET is state-changing/forgeable → use POST + token.

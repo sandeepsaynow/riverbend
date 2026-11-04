@@ -139,3 +139,14 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   (duplicate → closed). CSRF validated against an exact scheme://host:port allowlist (fixes the 127.0.0.1
   vs localhost rejection without weakening checks). DB-role boundary documented as a production gap.
   Rationale in ARCHITECTURE_DECISIONS D20.2; 24 real-PG tests (14 bootstrap/staff + 10 CSRF). 167/167.
+
+## 2026-11-04 — Feature 010 (D20.3): browser-login 403 fix + double-submit CSRF (extends D20.2)
+
+- **Root cause:** Helmet's default `Referrer-Policy: no-referrer` → browsers send `Origin: null` on
+  same-origin form POSTs → the D20.2 origin guard 403'd them (curl, sending no Origin, masked it).
+- **Fix:** Referrer-Policy → `strict-origin-when-cross-origin` + an origin-independent **double-submit CSRF
+  token** (HttpOnly SameSite=Lax `rb_csrf` cookie ⇔ hidden `_csrf` field) on all cookie-authed portal POSTs;
+  exact-origin allowlist kept as defense-in-depth; logout migrated GET→POST; `/admin/init` is bootstrap-token
+  authed (no CSRF). Rejected globally-allowing-null / disabling CSRF / wildcard CORS / Referer-or-Sec-Fetch-
+  alone. ARCHITECTURE_DECISIONS D20.3; +CSRF tests incl. the exact browser-403 regression. 170/170. Verified
+  live (Origin:null no-token→403, +token→401; Referrer-Policy header confirmed).

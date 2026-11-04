@@ -500,3 +500,37 @@ the **migrator/owner** role. Production should use a **dedicated restricted role
 `user`/`session`/`account`/`verification` (no DDL, no access to tenant tables). Introducing that role near
 submission is deferred and documented rather than shipped unverified. **Door:** two-way; identity records kept.
 See `specs/010-staff-auth-portal/` and `docs/FINAL_MANUAL_TEST.md`.
+
+## D20.3 — Browser-login 403 root cause + double-submit CSRF (extends D20.2)
+
+**Symptom:** curl `POST /admin/login` → 302 + session, but a real **browser** → **403 "Request blocked"**.
+**Root cause (file-evidenced, not guessed):** `app.use(helmet())` (`src/api/app.ts`) applied Helmet's default
+**`Referrer-Policy: no-referrer`**, which makes browsers send **`Origin: null`** on an ordinary same-origin
+HTML form POST (MDN). The D20.2 origin guard (`src/api/portal-routes.ts`) treated an unparseable `null`
+origin as foreign → 403. curl sends no Origin, so it was allowed — which is exactly why "it works in curl"
+was misleading (a curl 302 is NOT a browser session).
+
+**Fix (smallest secure, two independent layers):**
+1. **Referrer-Policy → `strict-origin-when-cross-origin`** (hygiene): same-origin form POSTs again carry a
+   real `Origin`, so the common browser case passes on the allowlist.
+2. **Double-submit CSRF token (primary, origin-independent)** on every cookie-authenticated state-changing
+   portal POST: a GET sets an **HttpOnly, SameSite=Lax** `rb_csrf` cookie and embeds the same value in a
+   hidden `_csrf` field; the POST must present a matching pair (constant-time compare). A cross-site POST
+   can neither read the HttpOnly cookie/field nor (SameSite=Lax) send the cookie, so it can never forge a
+   matching pair — **even with `Origin: null`**. The exact-origin allowlist (scheme+host+port, dev adds the
+   loopback sibling) remains as defense-in-depth: a present, parseable, foreign Origin is refused outright.
+   Both layers must pass.
+
+Applied uniformly to admin/staff **login**, **staff create**, **disable**, and **logout** (migrated from a
+CSRF-forgeable **GET** to a **POST** + token). `/admin/init` is **not** CSRF-gated — it is authenticated by
+the `ADMIN_BOOTSTRAP_TOKEN` secret (not an ambient cookie), so CSRF does not apply.
+
+**Rejected workarounds (and why):** globally allowing `Origin: null` (would accept cross-site opaque-origin
+forgeries); disabling CSRF or the guard (removes the defense); wildcard CORS / trusting arbitrary
+Referer / `Sec-Fetch-Site` alone (spoofable or insufficient); weakening cookie flags; changing password
+verification. **Production:** strict single HTTPS origin allowlist (`BETTER_AUTH_URL`); `Secure` + SameSite
+cookies; a reverse proxy must set a trusted `trust proxy` before forwarded headers are believed (documented
+gap — not enabled by client-controlled headers). **Local:** browse the canonical origin
+(`http://localhost:8080`; `127.0.0.1:8080` also allowed in dev). **Door:** two-way. Verified live: GET sets
+the new Referrer-Policy + `rb_csrf`; `Origin: null` without a token → 403, with a valid token → 401 (CSRF
+passes); foreign origin → 403. See `specs/010-staff-auth-portal/` and `docs/FINAL_MANUAL_TEST.md`.

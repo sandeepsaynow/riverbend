@@ -158,3 +158,5 @@ These require a human decision; see the dedicated section at the end of
 4. **Dataset shape.** Brief says "40 sample messages, 8 deliberately tricky"; the guide observes only **39 distinct IDs** (m-1003 delivered twice at rows 3 and 14; no m-1014) and treats **more than 8** messages as tricky. A dataset ambiguity to confirm.
 
 | P2 | **Portal CSRF canonical-origin policy** (D20.2): state-changing POSTs validate the full scheme://host:port Origin against an exact allowlist (prod = one HTTPS origin; dev adds the loopback sibling). | D20.2 |
+
+| P1 | **Portal double-submit CSRF** (D20.3): cookie-authed state-changing POSTs require an HttpOnly SameSite=Lax rb_csrf cookie matching a hidden _csrf field (origin-independent), plus the exact-origin allowlist; Referrer-Policy strict-origin-when-cross-origin. | D20.3 |

@@ -1,5 +1,23 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { fromNodeHeaders, normalizeOrigin, type Auth } from '../platform/auth/better-auth.js';
+
+const CSRF_COOKIE = 'rb_csrf';
+/** Read one cookie value from the raw Cookie header (no cookie-parser dependency). */
+function readCookie(req: Request, name: string): string | null {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+}
+function ctEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
 import { AuthPortalService, AlreadyInitialized, RecoveryRequired } from '../modules/portal/service.js';
 import type { OrdersService } from '../modules/orders/index.js';
 import type { ShopsService } from '../modules/shops/index.js';
@@ -13,8 +31,12 @@ function page(title: string, body: string): string {
 <style>body{font:15px system-ui,sans-serif;max-width:52rem;margin:1.5rem auto;padding:0 1rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.35rem .5rem;text-align:left}label{display:block;margin:.6rem 0 .2rem;font-weight:600}input,select{padding:.4rem;font:inherit;min-width:18rem}nav a{margin-right:1rem}</style>
 </head><body>${body}</body></html>`;
 }
-function loginForm(action: string, title: string): string {
-  return page(title, `<h1>${esc(title)}</h1><form method="POST" action="${action}">
+/** Hidden CSRF field for a form (double-submit token; pairs with the rb_csrf cookie). */
+function csrfField(token: string): string {
+  return `<input type="hidden" name="_csrf" value="${esc(token)}">`;
+}
+function loginForm(action: string, title: string, csrfToken: string): string {
+  return page(title, `<h1>${esc(title)}</h1><form method="POST" action="${action}">${csrfField(csrfToken)}
 <label>Email</label><input name="email" type="email" required>
 <label>Password</label><input name="password" type="password" required>
 <button type="submit">Sign in</button></form>`);
@@ -28,6 +50,7 @@ interface PortalDeps {
   db: Db;
   bootstrapToken: string;
   trustedOrigins: string[]; // exact scheme://host:port allowlist for Origin/Referer checks (D20.2)
+  secureCookies: boolean; // Secure flag on the CSRF cookie in production (D20.3)
 }
 
 /** Mounted in the composition layer (after express.json). Session-guarded server-rendered portal (010). */
@@ -37,20 +60,39 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
 
   const getSession = (req: Request) => deps.auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
 
-  // CSRF/Origin guard for our OWN state-changing HTML POSTs (Better Auth guards its own /api/auth routes).
-  // Validates the FULL origin (scheme + host + port) against the exact allowlist (D20.2). A present Origin
-  // must match exactly; when Origin is absent we fall back to Referer; with neither header (common for a
-  // same-origin form post, and backed by SameSite cookies) we allow. An unparseable/foreign value is refused.
   const allow = new Set(deps.trustedOrigins);
-  const sameOrigin = (req: Request): boolean => {
-    const origin = req.get('origin');
-    if (origin) { const n = normalizeOrigin(origin); return n !== null && allow.has(n); }
-    const referer = req.get('referer');
-    if (referer) { const n = normalizeOrigin(referer); return n !== null && allow.has(n); }
-    return true; // no Origin/Referer → same-origin form post (SameSite cookies are the backstop)
+
+  // Issue a per-page CSRF token: set it as an HttpOnly, SameSite=Lax cookie AND return it to embed in the
+  // form (double-submit). HttpOnly is safe because the SERVER echoes it into the field — JS never reads it.
+  const issueCsrf = (res: Response): string => {
+    const token = randomBytes(32).toString('base64url');
+    res.append('Set-Cookie', `${CSRF_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7200${deps.secureCookies ? '; Secure' : ''}`);
+    return token;
   };
+
+  /**
+   * CSRF guard for our OWN session/cookie-authenticated state-changing POSTs (D20.3). Two independent layers:
+   *  1) Origin/Referer defense-in-depth — a PRESENT, parseable Origin (or, if absent, Referer) must be in the
+   *     exact scheme://host:port allowlist. `Origin: null` (opaque context — e.g. Referrer-Policy: no-referrer)
+   *     is not parseable, so it is NOT trusted on its own and falls through to the token.
+   *  2) Double-submit token (PRIMARY, origin-independent) — the `rb_csrf` cookie must equal the `_csrf` field.
+   *     A cross-site POST cannot read the HttpOnly cookie or the hidden field, and SameSite=Lax withholds the
+   *     cookie on cross-site POSTs, so a forgery can never present a matching pair — even with `Origin: null`.
+   * Both must pass. (Bootstrap-token-gated /admin/init is NOT cookie-authenticated, so it does not use this.)
+   */
   const csrf = (req: Request, res: Response, next: NextFunction): void => {
-    if (!sameOrigin(req)) { res.status(403).type('html').send(page('Blocked', '<h1>Request blocked</h1>')); return; }
+    const reject = (): void => { res.status(403).type('html').send(page('Blocked', '<h1>Request blocked</h1>')); };
+    const origin = req.get('origin');
+    if (origin) {
+      const n = normalizeOrigin(origin); // 'null'/opaque → null → defer to the token (do not hard-reject)
+      if (n !== null && !allow.has(n)) return reject(); // a real, foreign origin is refused outright
+    } else {
+      const referer = req.get('referer');
+      if (referer) { const n = normalizeOrigin(referer); if (n === null || !allow.has(n)) return reject(); }
+    }
+    const cookieTok = readCookie(req, CSRF_COOKIE);
+    const bodyTok = (req.body as { _csrf?: string } | undefined)?._csrf;
+    if (!cookieTok || !bodyTok || !ctEqual(cookieTok, bodyTok)) return reject();
     next();
   };
 
@@ -69,15 +111,15 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
     try {
       const resp = await deps.auth.api.signInEmail({ body: { email: body.email ?? '', password: body.password ?? '' }, asResponse: true });
       for (const c of resp.headers.getSetCookie?.() ?? []) res.append('set-cookie', c);
-      if (resp.status >= 400) { res.status(401).type('html').send(loginForm(req.path, 'Sign in — try again')); return; }
+      if (resp.status >= 400) { res.status(401).type('html').send(loginForm(req.path, 'Sign in — try again', issueCsrf(res))); return; }
       res.redirect(redirectTo);
     } catch {
-      res.status(401).type('html').send(loginForm(req.path, 'Sign in — try again')); // generic error (no enumeration)
+      res.status(401).type('html').send(loginForm(req.path, 'Sign in — try again', issueCsrf(res))); // generic error (no enumeration)
     }
   }
 
   // --- One-time admin bootstrap (operator; bootstrap-token gated, single-use) ---
-  r.post('/admin/init', csrf, async (req: Request, res: Response) => {
+  r.post('/admin/init', async (req: Request, res: Response) => { // bootstrap-token-gated (secret, not cookie) → no CSRF needed
     const token = (req.get('x-bootstrap-token') ?? (req.body as { bootstrap_token?: string }).bootstrap_token ?? '');
     if (!deps.bootstrapToken || token !== deps.bootstrapToken) { res.status(401).json({ error: 'unauthorized' }); return; }
     const b = req.body as { email?: string; password?: string; name?: string };
@@ -92,7 +134,7 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
   });
 
   // --- Admin portal ---
-  r.get('/admin/login', (_req, res) => res.type('html').send(loginForm('/admin/login', 'Admin login')));
+  r.get('/admin/login', (_req, res) => res.type('html').send(loginForm('/admin/login', 'Admin login', issueCsrf(res))));
   r.post('/admin/login', csrf, (req, res) => void forwardSignIn(req, res, '/admin'));
   r.get('/admin', async (req, res) => {
     const s = (await getSession(req)) as { user?: { role?: string } } | null;
@@ -105,11 +147,13 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
     const s = (await getSession(req)) as { user?: { role?: string } } | null;
     if (s?.user?.role !== 'admin') { res.redirect('/admin/login'); return; }
     const staff = await deps.portal.listStaff();
+    const tok = issueCsrf(res);
     const rows = staff.map((x) => `<tr><td>${esc(x.email)}</td><td>${esc(x.role)}</td><td>${esc(x.status)}</td>
-<td><form method="POST" action="/admin/staff/${esc(x.userId)}/disable" style="margin:0"><button ${x.status !== 'active' ? 'disabled' : ''}>disable</button></form></td></tr>`).join('');
+<td><form method="POST" action="/admin/staff/${esc(x.userId)}/disable" style="margin:0">${csrfField(tok)}<button ${x.status !== 'active' ? 'disabled' : ''}>disable</button></form></td></tr>`).join('');
     const shopOpts = (await deps.shops.listShops().catch(() => [])).map((sh) => `<option value="${esc(sh.id)}">${esc(sh.slug)}</option>`).join('');
-    res.type('html').send(page('Staff', `<h1>Staff</h1><table><tr><th>email</th><th>role</th><th>status</th><th></th></tr>${rows}</table>
-<h2>Create staff</h2><form method="POST" action="/admin/staff">
+    res.type('html').send(page('Staff', `<h1>Staff</h1><nav><a href="/admin">Admin</a><form method="POST" action="/admin/logout" style="display:inline">${csrfField(tok)}<button>Log out</button></form></nav>
+<table><tr><th>email</th><th>role</th><th>status</th><th></th></tr>${rows}</table>
+<h2>Create staff</h2><form method="POST" action="/admin/staff">${csrfField(tok)}
 <label>Email</label><input name="email" type="email" required><label>Name</label><input name="name" required>
 <label>Password (min 12)</label><input name="password" type="password" minlength="12" required>
 <label>Shop</label><select name="shop_id" required>${shopOpts}</select>
@@ -139,15 +183,22 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
   });
 
   // --- Staff portal ---
-  r.get('/staff/login', (_req, res) => res.type('html').send(loginForm('/staff/login', 'Staff login')));
+  r.get('/staff/login', (_req, res) => res.type('html').send(loginForm('/staff/login', 'Staff login', issueCsrf(res))));
   r.post('/staff/login', csrf, (req, res) => void forwardSignIn(req, res, '/staff'));
-  r.get('/staff/logout', async (req, res) => { try { await deps.auth.api.signOut({ headers: fromNodeHeaders(req.headers) }); } catch { /* ignore */ } res.redirect('/staff/login'); });
+  // Logout is state-changing → POST + CSRF (not GET, which is CSRF-forgeable and prefetchable).
+  const doLogout = async (req: Request, res: Response, to: string): Promise<void> => {
+    try { await deps.auth.api.signOut({ headers: fromNodeHeaders(req.headers) }); } catch { /* ignore */ }
+    res.append('Set-Cookie', `${CSRF_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+    res.redirect(to);
+  };
+  r.post('/staff/logout', csrf, (req, res) => void doLogout(req, res, '/staff/login'));
+  r.post('/admin/logout', csrf, (req, res) => void doLogout(req, res, '/admin/login'));
 
   r.get('/staff', async (req, res) => {
     const ctx = await requireStaff(req, res); if (!ctx) return;
     const { orders, shop_total_cents } = await deps.orders.listOpenOrders(ctx.shopId);
     const na = await deps.orders.needsAttention(ctx.shopId);
-    res.type('html').send(page('Staff dashboard', `<h1>Dashboard</h1><nav><a href="/staff/requests">Requests</a><a href="/staff/orders">Orders</a><a href="/staff/needs-attention">Needs attention</a><a href="/staff/usage">Usage</a><a href="/staff/logout">Log out</a></nav>
+    res.type('html').send(page('Staff dashboard', `<h1>Dashboard</h1><nav><a href="/staff/requests">Requests</a><a href="/staff/orders">Orders</a><a href="/staff/needs-attention">Needs attention</a><a href="/staff/usage">Usage</a><form method="POST" action="/staff/logout" style="display:inline">${csrfField(issueCsrf(res))}<button>Log out</button></form></nav>
 <p>Open work orders: <strong>${orders.length}</strong> (total ${(shop_total_cents / 100).toFixed(2)}) · Needs attention: <strong>${na.length}</strong></p>`));
   });
   r.get('/staff/orders', async (req, res) => {

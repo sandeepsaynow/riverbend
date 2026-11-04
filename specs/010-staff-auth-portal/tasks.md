@@ -90,3 +90,12 @@ Status key: [x] done+verified · [~] scaffolded/not fully verified · [ ] not st
 - [x] T084 Tests: 14 bootstrap/staff fault-injection (incl. unauthorized-adoption refused, admin-not-granted)
       + 10 CSRF/origin (valid/127.0.0.1/foreign/scheme/port/missing/null/referer). 167/167.
 - [ ] T085 (prod, deferred) dedicated restricted DB role for Better Auth runtime — documented gap, not shipped.
+
+## Phase 9 — Browser-login 403 + double-submit CSRF (D20.3)
+- [x] T090 Referrer-Policy → strict-origin-when-cross-origin (Helmet) so same-origin POSTs keep a real Origin.
+- [x] T091 Double-submit CSRF token (HttpOnly SameSite=Lax rb_csrf cookie ⇔ hidden _csrf) on all cookie-authed
+      portal POSTs; exact-origin allowlist kept as defense-in-depth; /admin/init exempt (bootstrap-token auth).
+- [x] T092 Logout migrated GET → POST (+ token); nav uses POST forms.
+- [x] T093 Tests: csrf-origin (13) incl. the exact browser-403 regression (Origin: null + token → allowed);
+      portal tests made CSRF-aware. 170/170. Live-verified (Origin:null no-token→403, +token→401).
+- [ ] T094 (prod, deferred) set Express `trust proxy` for the real reverse proxy before trusting forwarded headers.

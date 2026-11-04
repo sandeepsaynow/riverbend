@@ -36,8 +36,16 @@ async function seedOrder(shopId: string): Promise<string> {
   return sub.requestId;
 }
 const cookies = (res: request.Response): string[] => ([] as string[]).concat((res.headers['set-cookie'] as unknown as string[]) ?? []);
+const parseCsrf = (html: string): string => (/name="_csrf" value="([^"]+)"/.exec(html)?.[1]) ?? '';
+const csrfCookie = (res: request.Response): string[] => cookies(res).filter((c) => c.startsWith('rb_csrf='));
+/** CSRF-aware POST: GET `formPage` to obtain the double-submit token + rb_csrf cookie, then POST with both. */
+async function csrfPost(path: string, fields: Record<string, string>, sessionCookies: string[], formPage: string): Promise<request.Response> {
+  const g = await request(app).get(formPage).set('Cookie', sessionCookies);
+  return request(app).post(path).set('Cookie', [...sessionCookies, ...csrfCookie(g)]).type('form').send({ ...fields, _csrf: parseCsrf(g.text) });
+}
 async function login(path: string, email: string, password: string): Promise<string[]> {
-  const res = await request(app).post(path).type('form').send({ email, password });
+  const g = await request(app).get(path); // issues the rb_csrf cookie + embeds the token
+  const res = await request(app).post(path).set('Cookie', csrfCookie(g)).type('form').send({ email, password, _csrf: parseCsrf(g.text) });
   expect(res.status).toBe(302);
   return cookies(res);
 }
@@ -71,9 +79,9 @@ describe('010 portal — bootstrap + staff mgmt + shop-scoped console', () => {
     const nOrder = await seedOrder(northside);
     const adminCookie = await login('/admin/login', 'admin@rb.com', 'Admin-Password-123');
 
-    const mk1 = await request(app).post('/admin/staff').set('Cookie', adminCookie).type('form').send({ email: 'staff1@rb.com', name: 'Staff1', password: 'Staff1-Password-123', shop_id: downtown, role: 'SHOP_STAFF' });
+    const mk1 = await csrfPost('/admin/staff', { email: 'staff1@rb.com', name: 'Staff1', password: 'Staff1-Password-123', shop_id: downtown, role: 'SHOP_STAFF' }, adminCookie, '/admin/staff');
     expect(mk1.status).toBe(302);
-    const mk2 = await request(app).post('/admin/staff').set('Cookie', adminCookie).type('form').send({ email: 'staff2@rb.com', name: 'Staff2', password: 'Staff2-Password-123', shop_id: northside, role: 'SHOP_STAFF' });
+    const mk2 = await csrfPost('/admin/staff', { email: 'staff2@rb.com', name: 'Staff2', password: 'Staff2-Password-123', shop_id: northside, role: 'SHOP_STAFF' }, adminCookie, '/admin/staff');
     expect(mk2.status).toBe(302);
 
     const c1 = await login('/staff/login', 'staff1@rb.com', 'Staff1-Password-123');
@@ -114,13 +122,14 @@ describe('010 portal — bootstrap + staff mgmt + shop-scoped console', () => {
     expect((await request(app).get('/staff').set('Cookie', c1)).status).toBe(200); // works before disable
 
     const uid = (await t.db.adminQuery<{ user_id: string }>(`SELECT user_id FROM shop_membership WHERE shop_id=$1 LIMIT 1`, [downtown])).rows[0]!.user_id;
-    const dis = await request(app).post(`/admin/staff/${uid}/disable`).set('Cookie', adminCookie);
+    const dis = await csrfPost(`/admin/staff/${uid}/disable`, {}, adminCookie, '/admin/staff');
     expect(dis.status).toBe(302);
 
     const after = await request(app).get('/staff').set('Cookie', c1); // existing session revoked
     expect(after.status).toBe(302);
     expect(after.headers.location).toBe('/staff/login');
-    const relogin = await request(app).post('/staff/login').type('form').send({ email: 'staff1@rb.com', password: 'Staff1-Password-123' });
+    const g = await request(app).get('/staff/login');
+    const relogin = await request(app).post('/staff/login').set('Cookie', csrfCookie(g)).type('form').send({ email: 'staff1@rb.com', password: 'Staff1-Password-123', _csrf: parseCsrf(g.text) });
     expect(relogin.status).toBe(401); // banned user cannot log in
   });
 

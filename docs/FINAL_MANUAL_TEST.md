@@ -282,3 +282,30 @@ also works in dev. A foreign origin, wrong scheme, wrong port, or `null` origin 
 migrator/owner role. For production, provision a **dedicated restricted role** with privileges limited to
 `user`/`session`/`account`/`verification` (no DDL, no access to tenant tables) and point `BETTER_AUTH`'s pool
 at it. This is documented, not yet shipped (deferred near submission to avoid an unverified role migration).
+
+## Browser login now works (D20.3) — canonical origin + CSRF
+
+The admin/staff portal now logs in correctly in a real browser. Earlier, Helmet's default
+`Referrer-Policy: no-referrer` made browsers send `Origin: null` on the login form POST, which the origin
+guard rejected (403 "Request blocked") — while curl (no Origin) succeeded, masking the bug. Fixed with a
+`strict-origin-when-cross-origin` referrer policy **and** an origin-independent double-submit CSRF token.
+
+- **Browse the canonical origin:** `http://localhost:8080` (same as `BETTER_AUTH_URL`); `http://127.0.0.1:8080`
+  also works in dev. In production use the single configured HTTPS origin.
+- **Login / create-staff / disable / logout** all carry a CSRF token automatically (hidden `_csrf` field +
+  `rb_csrf` cookie) — just use the rendered pages. **Logout is now a POST button** (not a link).
+- **Scripting login with curl** now needs the CSRF flow (a browser does this automatically):
+  ```bash
+  # 1) GET the form → capture the rb_csrf cookie and the hidden _csrf token:
+  curl -s -c cj.txt http://localhost:8080/admin/login -o login.html
+  TOK=$(grep -oE 'name="_csrf" value="[^"]+"' login.html | sed -E 's/.*value="([^"]+)".*/\1/')
+  # 2) POST with the cookie jar + the token + credentials:
+  curl -s -i -b cj.txt -c cj.txt -X POST http://localhost:8080/admin/login \
+    --data-urlencode email='<admin email>' --data-urlencode password='<admin password>' --data-urlencode "_csrf=$TOK"
+  # → 302 to /admin with a session cookie (in cj.txt); reuse cj.txt for /admin/staff etc.
+  ```
+- **Security checks (observed live):** `Origin: null` **without** a token → 403; **with** a valid token → 401
+  (passes CSRF; wrong creds). A foreign Origin → 403 even with a token. `/admin/init` is unaffected (it is
+  authenticated by `ADMIN_BOOTSTRAP_TOKEN`, not a cookie, so it is not CSRF-gated).
+- **Production reverse proxy:** set Express `trust proxy` to your proxy before any forwarded headers are
+  believed; keep the single HTTPS origin in the allowlist. (Documented gap — not shipped.)

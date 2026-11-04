@@ -96,3 +96,16 @@ admin). Amended requirements:
   origin; dev = that origin + its loopback sibling. Foreign/scheme/port/null are rejected; CSRF is never disabled.
 - **Prod gap (documented):** Better Auth runtime uses the migrator DB role; a dedicated restricted role is
   the production recommendation.
+
+## Amendment (D20.3, 2026-11-04) — browser-login 403 fix + double-submit CSRF
+- **FR-012a (root cause):** Helmet's default `Referrer-Policy: no-referrer` caused browsers to send
+  `Origin: null` on same-origin form POSTs → the D20.2 origin guard rejected them (403). Set
+  `Referrer-Policy: strict-origin-when-cross-origin`.
+- **FR-012b (origin-independent CSRF):** every cookie-authenticated state-changing portal POST (admin/staff
+  login, staff create, disable, logout) requires a **double-submit token** — an HttpOnly, SameSite=Lax
+  `rb_csrf` cookie that must equal a hidden `_csrf` field (constant-time). This is the primary defense and
+  holds even when `Origin: null`. The exact-origin allowlist (scheme+host+port; dev adds the loopback
+  sibling) remains as defense-in-depth. `Origin: null` is never accepted without a valid token.
+- **FR-012c (logout):** logout is a **POST** (CSRF-protected), not a forgeable GET.
+- **FR-012d (/admin/init):** bootstrap init is authenticated by the `ADMIN_BOOTSTRAP_TOKEN` secret (not an
+  ambient cookie) and is therefore not CSRF-gated.
