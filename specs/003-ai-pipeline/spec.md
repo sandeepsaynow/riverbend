@@ -104,11 +104,23 @@ no-AI notice; abandoned reservations are reaped. AI spend is stored in **whole m
   inspection; else `needs_review`.
 - **FR-006**: Distinct outcomes MUST be handled by code: wrong shop → `needs_review` (never auto-moved);
   price inquiry → `answered` (no order); delegation → flagged general inspection (no invented list).
-- **FR-007**: A per-shop monthly AI budget MUST be enforced by a reserve-then-settle ledger. Reserve is
-  a single atomic check `spent + reserved + estimate ≤ cap`; a receipt keyed by `(request, step,
-  attempt)` makes replays reuse the answer with no second charge; the real cost is settled after the
-  call (I4). At the cap the request parks `held_budget`. AI spend is stored in whole millionths of USD.
-- **FR-008**: Abandoned reservations MUST be reaped (settled at the estimate) so budget never leaks.
+- **FR-007** (amended 2026-11-04, constitution 1.2.0): A per-shop monthly AI budget MUST be enforced by
+  **LiteLLM native budgets** — one LiteLLM **team per shop** with a configurable **$5 calendar-month**
+  cap, and **restricted virtual keys** the worker uses for inference (never the master key). Admission
+  MUST be **reservation-based and fail-closed**: a call over budget is rejected **before reaching the
+  provider** → the request parks `held_budget`; if budget state cannot be verified, real inference fails
+  closed into a recoverable state. The real cost (`x-litellm-response-cost`), model, tokens, and LiteLLM
+  request id MUST be captured **against the Riverbend request** in whole millionths of USD, with a
+  **request-scoped usage record** so a redelivered job reuses the recorded result/cost with **no second
+  charge** (a usage/correlation record, NOT a competing reservation engine). Riverbend owns the
+  calendar-month reset (business policy) and retains tenant identity, `held_budget`, and request-level
+  cost references. The legacy reserve-then-settle ledger (below, superseded) is retained behind a flag
+  (`BUDGET_AUTHORITY`) for rollback until this passes acceptance (I4). See D7 + `docs/decision-log.md`.
+  *Superseded mechanism (kept for history):* an atomic `spent + reserved + estimate ≤ cap` check with a
+  receipt keyed `(request, step, attempt)` and post-call settle.
+- **FR-008** (amended): Native enforcement holds no Riverbend-side reservations to reap; instead an
+  **idempotent reconciliation** against LiteLLM's spend-log API records proxy-calculated cost per request
+  and MUST NOT double-count on repeat. (Superseded: reaper settling abandoned reservations at estimate.)
 - **FR-009**: Request states extend 002's: `awaiting_pipeline` → `processing` → `extracted` (validated
   form ready; work-order creation is slice 004) | `answered` | `awaiting_customer` | `needs_review` |
   `held_budget`. (`ordered`/`cancelled` arrive in slice 004.)

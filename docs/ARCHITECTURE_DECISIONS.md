@@ -107,16 +107,36 @@ cap is a future adapter, not built.
 
 ## D7 — The monthly AI spend cap
 
-**Pick:** **Hybrid** — our Postgres **reserve-then-settle ledger is the authority**; a per-shop
-LiteLLM budget set just above our cap is the seatbelt; a nightly reconcile alerts on drift; a
-cloud-wide budget alert is the last backstop. Reserve-and-check is **one atomic SQL statement**
-(`spent + reserved + estimate <= cap`), closing the burst race. Receipt row in `llm_calls` keyed
-by (request, step, attempt) → a replayed crash reuses the answer, no second charge. A **reaper**
-settles abandoned holds at the estimate. At the cap → `held_budget`; honest template notice
-(no AI); staff see "AI paused"; resume oldest-first on month rollover / raised cap. **Why not
-LiteLLM alone:** batched spend lag, rolling (not calendar) window, unverified fail-open, and it
-can't give safe replays/resume. **Door:** mostly **one-way** (financial records kept, never
-rewritten); the algorithm around them can change.
+**Pick (as of 2026-11-04, constitution 1.2.0):** **LiteLLM-native budgets are the admission and
+accounting authority.** One LiteLLM **team per shop** with a configurable **$5 calendar-month** cap,
+and **restricted virtual keys** the worker uses for inference (never the master key, which is confined
+to a provisioning/admin path). Admission is **reservation-based and fail-closed**: a call over budget
+is rejected **before reaching the provider** → the request parks `held_budget`; if budget state cannot
+be verified, real inference fails closed into a recoverable state. The real cost
+(`x-litellm-response-cost`), model, tokens, and LiteLLM request id are captured **against the Riverbend
+request** in whole millionths; an **idempotent reconciliation** against LiteLLM's spend-log API records
+proxy-calculated cost without double-counting. Riverbend retains tenant identity, the `held_budget`
+state, usage reporting, request-level cost references, and the **calendar-month reset** (business
+policy); a request-scoped usage record — **not** a second reservation engine — prevents a redelivered
+job from charging twice.
+
+**Why this reverses the original pick.** The original Hybrid chose a Postgres reserve-then-settle ledger
+as authority because "LiteLLM alone" had four gaps: batched spend lag, rolling (not calendar) window,
+unverified fail-open, and no safe replays/resume. **LiteLLM 1.106.6 resolves two** (reservation-based
+budgets and fail-closed enforcement now exist); the other two are handled by design (Riverbend
+administers the calendar reset; a request-scoped usage record preserves no-double-charge on redelivery).
+
+**Migration & rollback.** Dual-path behind a flag (`BUDGET_AUTHORITY=litellm|legacy`). The legacy
+`BudgetService` and its `llm_calls`/`shop_budgets` tables are **repurposed, not dropped** (usage/policy
+reporting), so rollback = flip the flag. Native enforcement becomes sole authority **only after** the
+FR-007 acceptance tests pass (zero-cost rejection/mocks; no paid budget-exhaustion runs). **Door:** the
+financial *records* remain one-way (kept, never rewritten); the enforcement engine is now two-way behind
+the flag. See `docs/decision-log.md` (2026-11-04) and Feature 003 FR-007/FR-008.
+
+**Original Hybrid pick (superseded, kept for history):** Postgres reserve-then-settle ledger as the
+authority; per-shop LiteLLM budget as a seatbelt; atomic `spent + reserved + estimate <= cap`; receipt
+keyed by (request, step, attempt) for crash-replay; reaper for abandoned holds; `held_budget` at the cap;
+resume oldest-first on month rollover.
 
 ## D8 — Work orders and money
 
