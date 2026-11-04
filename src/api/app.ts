@@ -21,6 +21,7 @@ import { registerOrdersRoutes } from '../modules/orders/routes.js';
 import { registerHealthRoutes } from '../modules/health/routes.js';
 import { WebService } from '../modules/web/index.js';
 import { registerWebRoutes } from './web-routes.js';
+import { registerDocsRoutes } from './docs-routes.js';
 import { EmailService } from '../modules/email/index.js';
 import { registerEmailWebhook } from './email-webhook.js';
 
@@ -51,6 +52,11 @@ export function createApp(deps: AppDeps): Express {
   const health = createRouter();
   registerHealthRoutes(health, { db: deps.db, schemaUrl: deps.config.DATABASE_ADMIN_URL });
   app.use(health);
+
+  // OpenAPI + Swagger UI (009) — non-production only (or DOCS_ENABLED), never public in prod.
+  if (deps.config.NODE_ENV !== 'production' || deps.config.DOCS_ENABLED) {
+    registerDocsRoutes(app);
+  }
 
   const admin = createRouter();
   admin.use(adminAuth(deps.auth));

@@ -9,6 +9,16 @@ export interface AuthContext {
   credentialId: string;
   kind: 'shop' | 'admin';
   shopId: string | null; // the shop for kind='shop'; null for kind='admin'
+  scopes: string[]; // explicit scopes; an empty array means UNRESTRICTED (backward-compatible, 009)
+}
+
+/** Enforce a scope on an authenticated principal. Empty scopes = unrestricted (legacy keys). */
+export function requireScope(req: Request, scope: string): void {
+  const auth = req.auth;
+  if (!auth) throw new HttpError(401, 'unauthorized', 'Missing credential');
+  if (auth.scopes.length > 0 && !auth.scopes.includes(scope)) {
+    throw new HttpError(403, 'insufficient_scope', `This route requires the '${scope}' scope`);
+  }
 }
 
 declare global {

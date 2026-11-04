@@ -1,4 +1,4 @@
-.PHONY: up down migrate test typecheck lint logs eval eval-live
+.PHONY: up down migrate test typecheck lint logs eval eval-live provision
 
 # One-command local run (FR-012): start Postgres + api; the api migrates before serving (FR-022).
 up:
@@ -37,3 +37,8 @@ eval:
 
 eval-live:
 	npx tsx eval/run.ts live
+
+# No-SQL local provisioning (009): ensure the 3 shops + issue a shop API key each (idempotent).
+# `make provision` leaves existing active keys alone; `make provision ROTATE=1` issues replacements.
+provision:
+	npx tsx scripts/provision.ts $(if $(ROTATE),--rotate,)

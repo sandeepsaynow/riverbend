@@ -68,6 +68,8 @@ const ConfigSchema = z.object({
   AI_CIRCUIT_COOLDOWN_MS: z.coerce.number().int().positive().default(30_000),
   // Per-shop bulkhead: max concurrent in-flight model calls for one shop.
   AI_MAX_CONCURRENCY_PER_SHOP: z.coerce.number().int().positive().default(4),
+  // Slice 009: OpenAPI/Swagger at /docs. Enabled in non-production automatically; force with DOCS_ENABLED.
+  DOCS_ENABLED: z.string().default('false').transform((v) => v.toLowerCase() === 'true' || v === '1'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

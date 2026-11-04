@@ -24,6 +24,22 @@ const IssuedCredentialResponse = z.object({
   shop_id: z.string(),
   prefix: z.string(),
   secret: z.string(),
+  scopes: z.array(z.string()),
+  expires_at: z.string().nullable(),
+});
+
+const IssueCredentialBody = z.object({
+  name: z.string().min(1).max(100).optional(),
+  scopes: z.array(z.string()).optional(),
+  expires_in_days: z.number().int().positive().max(3650).optional(),
+}).optional();
+
+const MaskedCredentialResponse = z.object({
+  credentials: z.array(z.object({
+    id: z.string(), kind: z.string(), prefix: z.string(), name: z.string().nullable(),
+    scopes: z.array(z.string()), status: z.string(), created_at: z.unknown(),
+    expires_at: z.unknown(), last_used_at: z.unknown(), revoked_at: z.unknown(),
+  })),
 });
 
 /** Admin provisioning routes (mounted under /admin, behind adminAuth). */
@@ -56,10 +72,15 @@ export function registerAdminShopRoutes(
   defineRoute(router, {
     method: 'post',
     path: '/shops/:slug/credentials',
-    schemas: { params: z.object({ slug: z.string() }), response: IssuedCredentialResponse },
+    schemas: { params: z.object({ slug: z.string() }), body: IssueCredentialBody, response: IssuedCredentialResponse },
     handler: async (ctx) => {
       try {
-        const issued = await deps.auth.issueShopCredential(ctx.params.slug);
+        const b = ctx.body ?? {};
+        const issued = await deps.auth.issueShopCredential(ctx.params.slug, {
+          ...(b.name !== undefined ? { name: b.name } : {}),
+          ...(b.scopes !== undefined ? { scopes: b.scopes } : {}),
+          ...(b.expires_in_days !== undefined ? { expiresInDays: b.expires_in_days } : {}),
+        });
         return {
           status: 201,
           body: {
@@ -68,8 +89,26 @@ export function registerAdminShopRoutes(
             shop_id: issued.shopId,
             prefix: issued.prefix,
             secret: issued.token, // shown exactly once (FR-008)
+            scopes: issued.scopes,
+            expires_at: issued.expiresAt,
           },
         };
+      } catch (err) {
+        if (err instanceof ShopNotFound) throw new HttpError(404, 'shop_not_found', err.message);
+        throw err;
+      }
+    },
+  });
+
+  // List a shop's credentials, MASKED (never a secret; never a LiteLLM virtual key) — 009 FR-004.
+  defineRoute(router, {
+    method: 'get',
+    path: '/shops/:slug/credentials',
+    schemas: { params: z.object({ slug: z.string() }), response: MaskedCredentialResponse },
+    handler: async (ctx) => {
+      try {
+        const credentials = await deps.auth.listShopCredentials(ctx.params.slug);
+        return { status: 200, body: { credentials } };
       } catch (err) {
         if (err instanceof ShopNotFound) throw new HttpError(404, 'shop_not_found', err.message);
         throw err;

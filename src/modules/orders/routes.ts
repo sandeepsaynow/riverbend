@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineRoute, type Router } from '../../platform/http/typed-route.js';
-import { requireShopId } from '../../platform/http/tenant-context.js';
+import { requireScope, requireShopId } from '../../platform/http/tenant-context.js';
 import type { OrdersService } from './index.js';
 
 const OrdersResponse = z.object({ orders: z.array(z.unknown()), shop_total_cents: z.number().int() });
@@ -14,6 +14,7 @@ export function registerOrdersRoutes(router: Router, deps: { orders: OrdersServi
     schemas: { response: OrdersResponse },
     handler: async (ctx) => {
       const shopId = requireShopId(ctx.req);
+      requireScope(ctx.req, 'orders:read'); // 009: scoped keys need orders:read; empty-scope keys allowed
       return { status: 200, body: await deps.orders.listOpenOrders(shopId) };
     },
   });
@@ -24,6 +25,7 @@ export function registerOrdersRoutes(router: Router, deps: { orders: OrdersServi
     schemas: { response: NeedsAttentionResponse },
     handler: async (ctx) => {
       const shopId = requireShopId(ctx.req);
+      requireScope(ctx.req, 'orders:read');
       return { status: 200, body: { items: await deps.orders.needsAttention(shopId) } };
     },
   });
