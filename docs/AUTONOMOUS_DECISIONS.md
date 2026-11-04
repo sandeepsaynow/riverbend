@@ -104,3 +104,22 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   reuses the existing queue. Alternative (separate orders queue) rejected as unnecessary at this scale.
 - **Not built this slice (deferred, logged):** verified-channel cancellation + the cancel/processing
   race (D9, needs email/006); server-rendered staff HTML (D17) — staff data exposed as JSON reads.
+
+## 2026-11-04 — LiteLLM-native budget migration (constitution 1.2.0): scoped + timeboxed
+
+- **Approved & applied:** constitution 1.1.0→1.2.0 (I4 enforcement → LiteLLM-native), D7 reversal,
+  FR-007/FR-008 rewrite, decision-log entry.
+- **Implemented + verified (zero-cost):** real proxy-cost capture (`x-litellm-response-cost` →
+  settle at real cost, fixing the prior estimate-only caveat) and **fail-closed `held_budget`** on a
+  proxy budget rejection (`BudgetExceededError`), with 2 new tests. Dual-path safe; legacy
+  `BudgetService` remains the active, tested I4 authority.
+- **Deliberately deferred (timebox + explicit deferral clause):** per-shop LiteLLM **team/virtual-key
+  provisioning**, LiteLLM Postgres persistence, and **sole-authority cutover**. Reason: I4's core
+  property ("N concurrent → exactly K") cannot be validated against real LiteLLM **without paid
+  budget-exhaustion calls** (forbidden) — a zero-cost mock cannot prove the proxy's real admission
+  atomicity. Per the mandate ("if native enforcement cannot be validated safely, retain the existing
+  tested path, document, and proceed"), legacy enforcement stays authoritative and the mandatory
+  Features 005–008 take priority. Native provisioning is specified (FR-007) and the cost/fail-closed
+  pieces are in place; cutover is a flag flip once a safe atomicity test exists.
+- **Rollback:** no cutover happened; `BUDGET_AUTHORITY` flag reserved for the future flip. Tables
+  unchanged (`shop_budgets`, `llm_calls`).
