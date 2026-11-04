@@ -13,6 +13,15 @@ Nothing pushed; no deploys.
 PostgreSQL via Testcontainers; Docker required) · `docker compose config` ✅ · `terraform validate` ✅.
 **No known test failures.**
 
+**FINAL QA (2026-11-04): ran the real Compose stack with real OpenAI.** Fixed 3 real boot bugs — api was
+not given `BETTER_AUTH_SECRET` in compose (portal dead); `server.ts` crashed the whole API on a malformed
+optional `RESEND_WEBHOOK_SECRET` (svix base64); silent poll failures. Also `restart: on-failure` on api/
+worker, `Dockerfile` ships `scripts/`, `${DB_HOST_PORT:-5432}`, added `docker-compose.local.yml` +
+`docs/FINAL_MANUAL_TEST.md`. **Live-AI E2E PASSED:** a Downtown request → real OpenAI via LiteLLM →
+`ordered`, catalog-priced **$110.00**; Northside isolated. **Credential reality:** OPENAI valid;
+**RESEND_API_KEY invalid (401)** + webhook secret not a valid Svix secret → real Resend (B/C/D) BLOCKED
+(deterministic Resend tests pass). **T054 browser click-through still manual** — see FINAL_MANUAL_TEST.md.
+
 **Features 001–010 all implemented + committed.** 001 foundation · 002 intake/queue · 003 AI pipeline
 (+real OpenAI via LiteLLM proxy) · 004 orders · 005 web form · 006 email (**Resend**, D21) · 007 resilience ·
 008 eval+Terraform · 009 API-key lifecycle+Swagger · 010 staff auth portal (Better Auth).

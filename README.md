@@ -14,6 +14,9 @@ Requires Docker. The default run is fully offline — the AI uses a deterministi
 nothing needs a provider key.
 
 ```sh
+# Full hands-on acceptance walkthrough (browser + live AI/email): see docs/FINAL_MANUAL_TEST.md.
+# If host :5432 is taken, use the local overlay:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm up -d --build
 ADMIN_BOOTSTRAP_TOKEN=some-long-random-secret make up   # Postgres + api + worker; migrates, seeds, serves
 # waits for http://localhost:8080/readyz
 make down

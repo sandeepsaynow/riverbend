@@ -11,6 +11,13 @@ Status key: [x] done+verified · [~] scaffolded/not fully verified · [ ] not st
 > **NOT run (honest): T054 — the real-AI browser smoke** (Compose + real OpenAI, clicking the UI) was
 > not executed this session; the flows are proven by automated supertest+real-Postgres tests, not a
 > browser. T004 (CLI re-verify) and polish (multi-shop selector UI, credential-replace UI) remain minor.
+>
+> **Update 2026-11-04 (final QA):** the Compose stack was booted with real services and the **live-AI
+> HTTP E2E PASSED** — a Downtown request processed through **real OpenAI via LiteLLM** to an `ordered`
+> work order with catalog prices ($110.00), and Northside could not see it (isolation). Portal/web-form/
+> auth-gating were verified live over HTTP (`/admin/login` 200, `/staff`→302, `/v1` 401). The **literal
+> browser click-through (T054) is still manual** (no browser automation was available) — exact steps in
+> `docs/FINAL_MANUAL_TEST.md`. T054 remains unchecked: the API-level invariants pass, a human still clicks.
 > **Install finding:** `npm i better-auth@1.7.16 --legacy-peer-deps` (unused @sveltejs/kit optional peer
 > vs dev vite@5); pinned exact in package.json/lock.
 

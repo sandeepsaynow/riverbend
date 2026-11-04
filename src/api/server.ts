@@ -73,7 +73,17 @@ async function main(): Promise<void> {
         maxSendAttempts: config.EMAIL_MAX_SEND_ATTEMPTS,
       })
     : undefined;
-  const emailVerifier = config.RESEND_WEBHOOK_SECRET ? new SvixVerifier(config.RESEND_WEBHOOK_SECRET) : undefined;
+  // Construct the Svix verifier defensively: svix validates/decodes the secret in its constructor, so a
+  // malformed RESEND_WEBHOOK_SECRET must NOT crash the whole API — it just disables the optional webhook
+  // (fail-closed; polling-mode inbound is unaffected, D21.1).
+  let emailVerifier: SvixVerifier | undefined;
+  if (config.RESEND_WEBHOOK_SECRET) {
+    try {
+      emailVerifier = new SvixVerifier(config.RESEND_WEBHOOK_SECRET);
+    } catch {
+      logger.warn('RESEND_WEBHOOK_SECRET is not a valid Svix signing secret — inbound webhook disabled (polling-mode inbound is unaffected)');
+    }
+  }
   if (email && emailVerifier) logger.info('inbound Resend webhook enabled (/webhooks/resend)');
 
   // Staff portal (010) — only when BETTER_AUTH_SECRET is set. Better Auth uses its OWN Pool on the

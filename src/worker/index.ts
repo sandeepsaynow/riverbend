@@ -141,8 +141,14 @@ async function main(): Promise<void> {
   // event-drain fetches content + correlates. Off unless RESEND_POLLING_ENABLED + RESEND_API_KEY + email.
   if (email && receiving && config.RESEND_POLLING_ENABLED && config.RESEND_API_KEY) {
     await queue.workPoll(EMAIL_POLL_QUEUE, config.RESEND_POLL_INTERVAL_SECONDS, async () => {
-      const r = await email.pollOnce(receiving);
-      if (!r.skipped) await email.processPendingEvents(receiving);
+      try {
+        const r = await email.pollOnce(receiving);
+        if (!r.skipped) await email.processPendingEvents(receiving);
+      } catch (err) {
+        // Surface a failing poll (e.g. an invalid RESEND_API_KEY → 401) instead of failing silently;
+        // the next interval retries. No email content or credential is logged (VII).
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'resend inbound poll failed (will retry next interval)');
+      }
     });
     await queue.schedulePoll(EMAIL_POLL_QUEUE, 0); // kick immediately; singletonKey dedups across restarts
     logger.info({ intervalSeconds: config.RESEND_POLL_INTERVAL_SECONDS }, 'resend inbound polling enabled');

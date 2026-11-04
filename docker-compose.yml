@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: mig_pw
       POSTGRES_DB: riverbend
     ports:
-      - "5432:5432"
+      # Host port is configurable to avoid a collision with a host-native Postgres on 5432 (the known
+      # localhost:5432 conflict): set DB_HOST_PORT=55432 (or any free port). Container port stays 5432.
+      - "${DB_HOST_PORT:-5432}:5432"
     volumes:
       - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -19,6 +21,7 @@ services:
 
   api:
     build: .
+    restart: on-failure  # self-heal a transient boot race (e.g. worker vs migrate-before-serve)
     depends_on:
       db:
         condition: service_healthy
@@ -39,6 +42,10 @@ services:
       EMAIL_SIGNING_KEY: ${EMAIL_SIGNING_KEY:-}
       RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
       RESEND_REPLY_DOMAIN: ${RESEND_REPLY_DOMAIN:-riverbend.example}
+      # Staff/admin portal (010): the api serves /admin + /staff + /api/auth. The portal is OFF unless
+      # BETTER_AUTH_SECRET is injected here (fail-closed) — so it MUST be passed to the api container.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:8080}
     ports:
       - "8080:8080"
     command: ["npm", "run", "start:api"]
@@ -78,6 +85,7 @@ services:
 
   worker:
     build: .
+    restart: on-failure  # the worker queries schema that the api migrates first; restart until migrations land
     depends_on:
       db:
         condition: service_healthy

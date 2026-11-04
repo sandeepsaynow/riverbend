@@ -1,0 +1,17 @@
+# Local manual-testing overlay (NOT auto-loaded; use explicitly with -f). It adapts the production-like
+# default compose for a local browser walkthrough (Feature 010 T054) on http://localhost:8080:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm up -d --build
+# It changes nothing about the committed production defaults. See docs/FINAL_MANUAL_TEST.md.
+services:
+  db:
+    # Avoid the known localhost:5432 conflict with a host-native Postgres (DB_HOST_PORT overrides too).
+    ports: !reset []        # do not publish the db to the host at all — api/worker reach it internally
+  api:
+    environment:
+      # Dev mode so Better Auth does NOT set Secure-only cookies (the session cookie must work over
+      # plain http://localhost for the browser login walkthrough), and so Swagger UI mounts at /docs.
+      NODE_ENV: development
+      DOCS_ENABLED: "1"
+  worker:
+    environment:
+      NODE_ENV: development

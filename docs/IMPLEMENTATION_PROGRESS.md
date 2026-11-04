@@ -146,3 +146,24 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
 - **BLOCKED (external):** real end-to-end with a live Resend account (send to a `<id>.resend.app` address and
   observe a real poll) needs `RESEND_API_KEY` + a receiving address; full customer-delivery round needs a
   verified sending domain. Steps in `specs/006-email/quickstart.md`. Not fabricated.
+
+## CHECKPOINT 2026-11-04 (FINAL QA) — ran the real stack; fixed boot blockers; live-AI E2E passed
+
+- **Bugs found + fixed by running the app** (not new features): (1) `docker-compose.yml` did not inject
+  `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL` into the **api** service → the whole 010 portal was OFF under
+  Compose (now injected); (2) `server.ts` constructed `SvixVerifier(RESEND_WEBHOOK_SECRET)` eagerly →
+  svix base64-decodes in its constructor, so a malformed **optional** secret **crashed the entire API**
+  (now wrapped: bad secret → warn + webhook disabled, fail-closed); (3) poll failures were silent →
+  worker now logs `resend inbound poll failed`. Also: `api`/`worker` given `restart: on-failure`
+  (self-heal the migrate-before-serve race); `Dockerfile` now ships `scripts/` (in-container provisioning);
+  db host port made `${DB_HOST_PORT:-5432}` (avoid the localhost:5432 conflict); added
+  `docker-compose.local.yml` (local browser-walkthrough overlay) + `docs/FINAL_MANUAL_TEST.md`.
+- **Verified live (Compose, real OpenAI via LiteLLM — NOT FakeGateway):** api `ready`; portal/web-form/
+  polling enabled; `/admin/login` 200, `/staff`→302, `/v1/orders`→401. A Downtown request processed to an
+  `ordered` work order with catalog prices **$110.00** (CHAIN_REPLACE+TUNE_BASIC, cat-001); Northside
+  `/v1/orders` empty (isolation). LiteLLM healthy; worker logged a real `llm extraction` (467 tokens).
+- **Regression:** `typecheck`+`lint` clean (91 modules); `vitest` **138/138** (real PostgreSQL);
+  `docker compose config` + `+local overlay` + `terraform validate` all valid.
+- **Credential reality:** OPENAI_API_KEY valid (200); **RESEND_API_KEY invalid (401)** + RESEND_WEBHOOK_SECRET
+  not a valid Svix secret → real Resend outbound/inbound/delivery (B/C/D) **BLOCKED**; deterministic Resend
+  integration (A) passes. **T054 browser click-through still manual** (no browser automation); guide written.

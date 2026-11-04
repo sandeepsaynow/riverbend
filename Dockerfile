@@ -11,6 +11,9 @@ RUN npm ci || npm install
 COPY tsconfig.json ./
 COPY catalog ./catalog
 COPY src ./src
+# Operator scripts (e.g. no-SQL local provisioning, 009) so they can run in-container against the
+# compose database — `docker compose exec api npx tsx scripts/provision.ts` — avoiding any host DB.
+COPY scripts ./scripts
 
 ENV NODE_ENV=production
 EXPOSE 8080
