@@ -31,20 +31,52 @@ interface UsageLogger {
 }
 
 const SYSTEM_PROMPT = [
-  'You convert one bike-shop customer message into a strict JSON intake form. Output JSON ONLY.',
-  'Schema:',
-  '{',
-  '  "kind": "repair" | "price_inquiry" | "wrong_shop" | "delegation" | "unclear",',
-  '  "bikes": [ { "bikeNumber": <positive int>, "issues": [<string>...],',
-  '              "serviceCodes": [<CODE>...], "wheels": ["front"|"rear"...] (optional) } ],',
-  '  "urgency": "normal" | "urgent",',
-  '  "dateWords": <the customer\'s own date/time words, or null>,',
-  '  "questionDraft": <one short clarifying question if the request is ambiguous, else null>',
-  '}',
-  'Rules: map each repair only to codes from the ALLOWED list below — never invent a code. If no code',
-  'clearly applies, leave serviceCodes empty and set kind "unclear". Do not guess prices, dates, or',
-  'shops. Report issues in the customer\'s words. Return the JSON object and nothing else.',
+  'You convert one bike-shop customer message into a strict JSON intake form, matching the provided',
+  'JSON schema exactly. Map each repair only to codes from the ALLOWED list in the user message — never',
+  'invent a code. If no allowed code clearly applies, leave serviceCodes empty and set kind "unclear".',
+  'Do not guess prices, dates, or shops. Report issues in the customer\'s own words. If the request is',
+  'ambiguous, put one short clarifying question in questionDraft; otherwise set it null.',
 ].join('\n');
+
+/** Build the strict JSON-schema response_format (I3 safety-net still re-validates in code). */
+function responseFormat(allowed: readonly string[]): Record<string, unknown> {
+  const serviceCodes =
+    allowed.length > 0
+      ? { type: 'array', items: { type: 'string', enum: [...allowed] } }
+      : { type: 'array', items: { type: 'string' } };
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: 'riverbend_extraction',
+      strict: true,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'bikes', 'urgency', 'dateWords', 'questionDraft'],
+        properties: {
+          kind: { type: 'string', enum: ['repair', 'price_inquiry', 'wrong_shop', 'delegation', 'unclear'] },
+          bikes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['bikeNumber', 'issues', 'serviceCodes', 'wheels'],
+              properties: {
+                bikeNumber: { type: 'integer' },
+                issues: { type: 'array', items: { type: 'string' } },
+                serviceCodes,
+                wheels: { type: 'array', items: { type: 'string', enum: ['front', 'rear'] } },
+              },
+            },
+          },
+          urgency: { type: 'string', enum: ['normal', 'urgent'] },
+          dateWords: { type: ['string', 'null'] },
+          questionDraft: { type: ['string', 'null'] },
+        },
+      },
+    },
+  };
+}
 
 export class LiteLlmGateway implements LlmGateway {
   readonly name = 'litellm';
@@ -72,31 +104,47 @@ export class LiteLlmGateway implements LlmGateway {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (this.config.apiKey) headers.authorization = `Bearer ${this.config.apiKey}`;
 
-    const res = await fetch(`${this.config.baseUrl.replace(/\/+$/, '')}/v1/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: this.config.model,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: user },
-        ],
-      }),
-      signal: AbortSignal.timeout(this.config.timeoutMs ?? 20_000),
-    });
+    // Tolerate a base URL that already ends in /v1 (LLM_BASE_URL=http://litellm:4000/v1) or one that
+    // does not — always resolve to a single /v1/chat/completions.
+    const base = this.config.baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+
+    let res: Response;
+    try {
+      res = await fetch(`${base}/v1/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: this.config.model,
+          temperature: 0,
+          response_format: responseFormat(allowed),
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: user },
+          ],
+        }),
+        signal: AbortSignal.timeout(this.config.timeoutMs ?? 20_000),
+      });
+    } catch (err) {
+      // Timeout (AbortSignal) or network failure. Message only — never the prompt/content (VII).
+      const kind = err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'network error';
+      throw new Error(`LiteLLM proxy request failed (${kind})`);
+    }
 
     if (!res.ok) {
       // Status only — an error body may echo the prompt/content, which must never be logged (VII).
       throw new Error(`LiteLLM proxy returned HTTP ${res.status}`);
     }
 
-    const body = (await res.json()) as {
+    let body: {
       model?: string;
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
       choices?: Array<{ message?: { content?: string } }>;
     };
+    try {
+      body = (await res.json()) as typeof body;
+    } catch {
+      throw new Error('LiteLLM proxy returned a non-JSON response');
+    }
 
     const u = body.usage ?? {};
     this.lastUsage = {
@@ -112,7 +160,11 @@ export class LiteLlmGateway implements LlmGateway {
     if (typeof text !== 'string') {
       throw new Error('LiteLLM proxy returned no message content');
     }
-    // Raw, unvalidated model output: the caller enforces the schema + catalog codes (I3).
-    return JSON.parse(text);
+    try {
+      // Raw, unvalidated model output: the caller enforces the schema + catalog codes (I3).
+      return JSON.parse(text);
+    } catch {
+      throw new Error('LiteLLM proxy returned malformed JSON content');
+    }
   }
 }

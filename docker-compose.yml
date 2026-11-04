@@ -40,22 +40,25 @@ services:
   # (no key required). Enable with:  docker compose --profile llm up   (after setting the keys in .env).
   # Production MUST pin this image by digest (supply-chain containment, D6); the moving tag is local-only.
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    # Pinned by digest (D6 supply-chain containment). Tag kept for readability; the digest is what binds.
+    image: ghcr.io/berriai/litellm:main-stable@sha256:37e2dafb088a7723beb998590682957386dfc83ffea1848486f8e0e5cfac0b06
     profiles: ["llm"]
     restart: unless-stopped
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
     environment:
-      # Backing-provider key — read ONLY by the proxy (never passed to the app). Soft default so the
-      # default (no-profile) `make up` still resolves with no key; if empty when the profile runs, the
-      # proxy/provider fails fast with a clear auth error. Set it in .env to go live.
+      # Backing-provider key — read ONLY by the proxy (never passed to the app, browser, or logs). Soft
+      # default so the default (no-profile) `make up` still resolves with no key; if empty when the
+      # profile runs, the proxy/provider fails fast with a clear auth error. Set it in .env to go live.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # The proxy requires a master key; the worker must present the same value as LLM_API_KEY. If empty
       # under this profile the proxy refuses to start with an explicit message.
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
-    expose:
-      - "4000"
+    # Bound to loopback only: reachable by the operator at 127.0.0.1:4000, never on external interfaces.
+    # The worker reaches it in-network as http://litellm:4000.
+    ports:
+      - "127.0.0.1:4000:4000"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/liveliness').status==200 else 1)\""]
       interval: 5s
