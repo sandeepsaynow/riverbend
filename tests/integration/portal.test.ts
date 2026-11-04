@@ -92,6 +92,22 @@ describe('010 portal — bootstrap + staff mgmt + shop-scoped console', () => {
     expect(o2.text).not.toContain(dOrder);
   });
 
+  it('staff console escapes customer-controlled content and leaks no secrets', async () => {
+    // Seed a request whose customer email carries an XSS payload.
+    const sub = await intake.submit({ shopId: downtown, source: 'web', submissionId: `xss-${Date.now()}`, content: 'brake check', customerEmail: '<script>alert(1)</script>@x.com' });
+    const c1 = await login('/staff/login', 'staff1@rb.com', 'Staff1-Password-123');
+    const list = await request(app).get('/staff/requests').set('Cookie', c1);
+    expect(list.status).toBe(200);
+    expect(list.text).toContain('&lt;script&gt;'); // escaped
+    expect(list.text).not.toContain('<script>alert(1)</script>'); // never raw
+    const detail = await request(app).get(`/staff/requests/${sub.requestId}`).set('Cookie', c1);
+    expect(detail.text).toContain('brake check');
+    expect(detail.text).not.toContain('<script>alert(1)</script>');
+    const usage = await request(app).get('/staff/usage').set('Cookie', c1);
+    expect(usage.status).toBe(200);
+    expect(usage.text).not.toMatch(/sk-[A-Za-z0-9]{10,}|password/i); // no secrets rendered
+  });
+
   it('disabling a staff account rejects its session and subsequent login', async () => {
     const adminCookie = await login('/admin/login', 'admin@rb.com', 'Admin-Password-123');
     const c1 = await login('/staff/login', 'staff1@rb.com', 'Staff1-Password-123');

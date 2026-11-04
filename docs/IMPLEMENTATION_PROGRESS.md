@@ -86,3 +86,14 @@ keys never exposed. Tests: **112/112**. Spec: `specs/009-api-access-docs/spec.md
   ordered steps in `specs/010-staff-auth-portal/tasks.md`. Reason: a full library-backed auth system +
   server-rendered portal cannot be implemented AND verified in one session, and unverified auth code /
   a fabricated browser smoke would violate the honesty mandate.
+
+## Feature 010 — staff auth portal IMPLEMENTED (2026-11-04, slices A–D)
+
+Better Auth 1.7.16 integrated (email/password + sessions + admin plugin, pg adapter; signup disabled;
+schema via official CLI → migration 10100). Riverbend authorization via shop_membership (migration
+10000) → forced RLS. Admin/staff server-rendered portal (/admin/*, /staff/*): one-time bootstrap-gated
+admin init, admin-created staff, shop-scoped console (requests/orders/needs-attention/usage), disable →
+session revoke + relogin blocked. Feature 009 shop API keys + Swagger unchanged. **123/123 tests**
+(auth, authz, shop-scoping, escaping/no-secrets, regression), typecheck + lint clean.
+**NOT run: the real-AI browser smoke (T054)** — flows verified by automated real-Postgres tests, not a
+browser session. See specs/010-staff-auth-portal/tasks.md.

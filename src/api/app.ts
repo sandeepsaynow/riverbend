@@ -81,6 +81,7 @@ export function createApp(deps: AppDeps): Express {
       portal: new AuthPortalService(deps.db, deps.betterAuth),
       orders: deps.orders,
       shops: deps.shops,
+      db: deps.db,
       bootstrapToken: deps.config.ADMIN_BOOTSTRAP_TOKEN,
       baseUrlHost: host,
     });

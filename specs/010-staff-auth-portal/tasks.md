@@ -2,11 +2,17 @@
 
 Status key: [x] done+verified · [~] scaffolded/not fully verified · [ ] not started.
 
-> **Progress 2026-11-04:** T010 done + verified (115/115). Everything Better-Auth-dependent is NOT
-> started (honest). **Install finding:** `npm i better-auth@1.7.16` fails ERESOLVE because better-auth
-> declares an *optional* peer on `@sveltejs/kit` (→ vite@8) that conflicts with our dev vite@5. Install
-> with `npm i better-auth@1.7.16 --legacy-peer-deps` (SvelteKit is unused; not a real conflict). Pin in
-> package-lock after.
+> **Progress 2026-11-04 (implemented):** Slices A–D done + verified (123/123 tests, typecheck + lint
+> clean). DONE: T001–T003 (install + config + generated schema migration), T010–T013 (membership/
+> bootstrap, portal service, admin-init, session guard), T020–T021 (admin login/dashboard/staff
+> list+create+disable), T030–T034 (staff login/logout/dashboard/requests/orders/needs-attention/usage),
+> T040–T041 (own-route CSRF/Origin, disabled/revoked rejection, HttpOnly cookies, generic errors),
+> T050–T053 (auth + authz + UI + regression tests on real PostgreSQL).
+> **NOT run (honest): T054 — the real-AI browser smoke** (Compose + real OpenAI, clicking the UI) was
+> not executed this session; the flows are proven by automated supertest+real-Postgres tests, not a
+> browser. T004 (CLI re-verify) and polish (multi-shop selector UI, credential-replace UI) remain minor.
+> **Install finding:** `npm i better-auth@1.7.16 --legacy-peer-deps` (unused @sveltejs/kit optional peer
+> vs dev vite@5); pinned exact in package.json/lock.
 
 ## Phase 0 — Library + schema
 - [ ] T001 Install `better-auth@1.7.16` + `@better-auth/cli@1.4.21` **with `--legacy-peer-deps`** (see

@@ -68,6 +68,25 @@ make eval-live   # same, through the real provider (gated; costs money; keep spe
 
 [`docs/results.md`](docs/results.md) is a real run read back from the database (not fabricated).
 
+### Staff portal — human login (010)
+
+Set `BETTER_AUTH_SECRET` (+ `ADMIN_BOOTSTRAP_TOKEN`) and `make up`. **Human** auth is **Better Auth**
+(email/password, sessions) and is separate from the machine `/v1` shop API keys and the internal
+LiteLLM virtual keys. One-time admin init, then browser login:
+
+```sh
+# 1) one-time first-admin init (operator; single-use, bootstrap-token gated)
+curl -X POST localhost:8080/admin/init -H 'Content-Type: application/json' \
+     -d "{\"bootstrap_token\":\"$ADMIN_BOOTSTRAP_TOKEN\",\"email\":\"admin@you.com\",\"password\":\"<≥12 chars>\",\"name\":\"Admin\"}"
+# 2) browser: http://localhost:8080/admin/login  → /admin → /admin/staff (create staff: email, password, shop, role)
+# 3) browser: http://localhost:8080/staff/login   → /staff dashboard, /staff/requests, /staff/orders,
+#             /staff/needs-attention, /staff/usage  — each staff sees ONLY their assigned shop.
+```
+
+Sessions are HttpOnly cookies (Secure in production); disabling a staff account revokes its session and
+blocks re-login. Passwords are hashed by Better Auth (never stored/returned as plaintext). The portal is
+off unless `BETTER_AUTH_SECRET` is set.
+
 ### Admin, credentials & local demo (009)
 
 API docs: **Swagger UI at `http://localhost:8080/docs`** (+ `/openapi.json`) — non-production only.

@@ -3,6 +3,7 @@ import { fromNodeHeaders, type Auth } from '../platform/auth/better-auth.js';
 import { AuthPortalService, AlreadyInitialized } from '../modules/portal/service.js';
 import type { OrdersService } from '../modules/orders/index.js';
 import type { ShopsService } from '../modules/shops/index.js';
+import type { Db } from '../platform/db/index.js';
 
 function esc(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -24,6 +25,7 @@ interface PortalDeps {
   portal: AuthPortalService;
   orders: OrdersService;
   shops: ShopsService;
+  db: Db;
   bootstrapToken: string;
   baseUrlHost: string; // for Origin checks on state-changing POSTs
 }
@@ -138,7 +140,7 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
     const ctx = await requireStaff(req, res); if (!ctx) return;
     const { orders, shop_total_cents } = await deps.orders.listOpenOrders(ctx.shopId);
     const na = await deps.orders.needsAttention(ctx.shopId);
-    res.type('html').send(page('Staff dashboard', `<h1>Dashboard</h1><nav><a href="/staff/orders">Orders</a><a href="/staff/needs-attention">Needs attention</a><a href="/staff/logout">Log out</a></nav>
+    res.type('html').send(page('Staff dashboard', `<h1>Dashboard</h1><nav><a href="/staff/requests">Requests</a><a href="/staff/orders">Orders</a><a href="/staff/needs-attention">Needs attention</a><a href="/staff/usage">Usage</a><a href="/staff/logout">Log out</a></nav>
 <p>Open work orders: <strong>${orders.length}</strong> (total ${(shop_total_cents / 100).toFixed(2)}) · Needs attention: <strong>${na.length}</strong></p>`));
   });
   r.get('/staff/orders', async (req, res) => {
@@ -152,6 +154,47 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
     const items = await deps.orders.needsAttention(ctx.shopId);
     const rows = items.map((i) => `<tr><td>${esc(String((i as { request_id?: string }).request_id ?? ''))}</td><td>${esc(String((i as { reason?: string }).reason ?? ''))}</td></tr>`).join('');
     res.type('html').send(page('Needs attention', `<h1>Needs attention</h1><p><a href="/staff">← dashboard</a></p><table><tr><th>request</th><th>reason</th></tr>${rows}</table>`));
+  });
+
+  r.get('/staff/requests', async (req, res) => {
+    const ctx = await requireStaff(req, res); if (!ctx) return;
+    const rows = await deps.db.withTenant(ctx.shopId, (c) => c.query<{ id: string; state: string; source: string; customer_email: string | null; received_at: string }>(
+      `SELECT r.id, r.state, m.source, m.customer_email, m.received_at FROM requests r JOIN messages m ON m.id=r.message_id ORDER BY m.received_at DESC LIMIT 50`));
+    const body = rows.rows.map((x) => `<tr><td><a href="/staff/requests/${esc(x.id)}">${esc(x.id.slice(0, 8))}…</a></td><td>${esc(x.state)}</td><td>${esc(x.source)}</td><td>${esc(x.customer_email ?? '')}</td></tr>`).join('');
+    res.type('html').send(page('Requests', `<h1>Recent requests</h1><p><a href="/staff">← dashboard</a></p><table><tr><th>id</th><th>state</th><th>source</th><th>email</th></tr>${body}</table>`));
+  });
+
+  r.get('/staff/requests/:id', async (req, res) => {
+    const ctx = await requireStaff(req, res); if (!ctx) return;
+    const id = String(req.params.id);
+    const data = await deps.db.withTenant(ctx.shopId, async (c) => {
+      const req0 = await c.query<{ state: string; last_error: string | null; content: string; customer_email: string | null }>(
+        `SELECT r.state, r.last_error, m.content, m.customer_email FROM requests r JOIN messages m ON m.id=r.message_id WHERE r.id=$1`, [id]);
+      const ex = await c.query<{ kind: string; bikes: unknown; flagged: boolean }>(`SELECT kind, bikes, flagged FROM extractions WHERE request_id=$1`, [id]);
+      const fu = await c.query<{ question: string; reply_content: string | null }>(`SELECT question, reply_content FROM follow_ups WHERE request_id=$1`, [id]);
+      return { r: req0.rows[0], ex: ex.rows[0], fu: fu.rows[0] };
+    });
+    if (!data.r) { res.status(404).type('html').send(page('Not found', '<h1>Request not found</h1>')); return; }
+    const { orders: ords } = await deps.orders.listOpenOrders(ctx.shopId);
+    const mine = ords.filter((o) => (o as { request_id?: string }).request_id === id);
+    res.type('html').send(page('Request', `<h1>Request ${esc(id.slice(0, 8))}…</h1><p><a href="/staff/requests">← requests</a></p>
+<p><strong>State:</strong> ${esc(data.r.state)}${data.r.last_error ? ` (${esc(data.r.last_error)})` : ''}</p>
+<p><strong>Customer:</strong> ${esc(data.r.customer_email ?? '(none)')}</p>
+<h3>Original message</h3><pre>${esc(data.r.content)}</pre>
+<h3>AI extraction (code-validated)</h3><pre>${esc(data.ex ? JSON.stringify({ kind: data.ex.kind, flagged: data.ex.flagged, bikes: data.ex.bikes }, null, 2) : '(none)')}</pre>
+${data.fu ? `<h3>Clarification</h3><p>Q: ${esc(data.fu.question)}</p><p>A: ${esc(data.fu.reply_content ?? '(awaiting)')}</p>` : ''}
+<h3>Work orders</h3><pre>${esc(JSON.stringify(mine, null, 2))}</pre>`));
+  });
+
+  r.get('/staff/usage', async (req, res) => {
+    const ctx = await requireStaff(req, res); if (!ctx) return;
+    const period = new Date().toISOString().slice(0, 7);
+    const u = await deps.db.withTenant(ctx.shopId, (c) => c.query<{ spent: string | null; calls: string }>(
+      `SELECT sum(cost_micros)::text AS spent, count(*)::text AS calls FROM llm_calls WHERE period=$1`, [period]));
+    const spent = Number(u.rows[0]!.spent ?? 0);
+    res.type('html').send(page('AI usage', `<h1>AI usage (${esc(period)})</h1><p><a href="/staff">← dashboard</a></p>
+<p>Recorded proxy-calculated spend this period: <strong>${spent} micros ($${(spent / 1e6).toFixed(4)})</strong> over ${esc(u.rows[0]!.calls)} call(s).</p>
+<p><em>Note:</em> LiteLLM enforces the per-shop monthly cap; spend is eventually-consistent (a bounded one-in-flight-call soft-cap). No provider/LiteLLM keys are shown here.</p>`));
   });
 
   app.use(r);
