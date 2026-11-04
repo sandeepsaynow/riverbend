@@ -6,13 +6,28 @@ means not built.
 
 ## Current state (verified)
 
-| Slice | Status | Commit |
-|---|---|---|
-| 001 foundation | ✅ complete, converged | `b6dd646` |
-| 002 intake-queue | ✅ complete, converged | `4df4cfd` |
-| 003 ai-pipeline | ✅ complete vs **FakeGateway** (real provider pending B1) | `b377d86` |
-| 004 orders-staff | ✅ complete (cancel + staff-HTML deferred) | `64233a9` |
-| 005–008 | ⛔ pending | — |
+> **UPDATE 2026-11-04:** 001–008 are now implemented and committed (88/88 tests). This table's
+> "005–008 pending" is historical. Real OpenAI inference works through the LiteLLM proxy; the
+> constitution is amended to 1.2.0. Remaining work is only the gated/deferred items listed at the end.
+
+| Slice | Status |
+|---|---|
+| 001–004 | ✅ complete |
+| 003 real provider | ✅ live via LiteLLM proxy (budget migration 1.2.0; legacy ledger still authoritative) |
+| 005 web form | ✅ |
+| 006 email (Mailpit) | ✅ |
+| 007 resilience (breaker/bulkhead/paused) | ✅ core |
+| 008 eval + Terraform | ✅ deterministic eval (results.md) + validated IaC; live eval + deploy gated |
+
+### Remaining (gated/deferred — not blockers for the mandatory deliverables)
+- **B1**: `make eval-live` (paid 40-message run) + real provider cost in results.md.
+- **LiteLLM-native budget sole-authority**: per-shop team/virtual-key provisioning + the
+  "N concurrent → exactly K" acceptance test (needs a zero-cost enforcement harness, else paid calls).
+- Verified-channel cancellation (m-1038) + server-rendered staff HTML (D9/D17).
+- OpenTelemetry/Phoenix tracing, alert set, retention/TTL sweeper (007).
+- **B2**: live GCP deploy (IaC validated; `terraform apply` only).
+
+### Historical (original 005–008 plan)
 
 Branch: `004-orders-staff` (each slice branched off the prior). Tests: `npm test` → **69/69** on real
 PostgreSQL (Docker). `npm run typecheck` + `npm run lint` clean. Live flow verified via `make up`:

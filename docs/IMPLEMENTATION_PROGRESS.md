@@ -51,6 +51,19 @@ See [AUTONOMOUS_DECISIONS.md](./AUTONOMOUS_DECISIONS.md) for rationale.
 
 ## Current feature
 
-001–004 complete + committed (69/69 tests, live-verified). 005–008 pending — see
-[AUTONOMOUS_HANDOFF.md](./AUTONOMOUS_HANDOFF.md) for exact next actions. Stopped at a session size
-limit, not a blocker.
+**001–008 implemented + committed. 88/88 tests; typecheck + lint clean.**
+
+- 001–004 as before (foundation, intake/queue, AI pipeline, orders).
+- Real OpenAI inference through the approved LiteLLM-proxy architecture (verified live end-to-end).
+- Constitution amended to **1.2.0** (I4 → LiteLLM-native budgets, D7 reversal, FR-007 rewrite); the
+  verifiable migration pieces (real cost capture, fail-closed held_budget) are in, legacy ledger stays
+  the active authority (native sole-authority cutover deferred — can't validate atomicity without paid
+  budget-exhaustion calls; see [decision-log.md](./decision-log.md) + [AUTONOMOUS_DECISIONS.md](./AUTONOMOUS_DECISIONS.md)).
+- 005 web form, 006 email (Mailpit), 007 resilience (breaker/bulkhead/AI-paused) — lean specs under
+  `specs/00X-*/spec.md`.
+- 008 eval harness → real [results.md](./results.md) (deterministic 40-message run); GCP Terraform
+  IaC **validated** (Terraform 1.17.1), CI runs `terraform validate`; README + [architecture note](./ARCHITECTURE_NOTE.md).
+
+**Gated / deferred (not fabricated):** live 40-message eval + real provider cost (B1); LiteLLM-native
+sole-authority cutover; verified-channel cancellation + staff HTML; OpenTelemetry/retention sweeper;
+live GCP deploy (B2). See [AUTONOMOUS_HANDOFF.md](./AUTONOMOUS_HANDOFF.md).
