@@ -8,6 +8,8 @@ import { LiteLlmGateway } from '../platform/llm/litellm-gateway.js';
 import type { LlmGateway } from '../platform/llm/index.js';
 import { PipelineService } from '../modules/pipeline/index.js';
 import { OrdersService } from '../modules/orders/index.js';
+import { EmailService } from '../modules/email/index.js';
+import { InMemoryEmailTransport, MailpitTransport, type EmailTransport } from '../modules/email/transport.js';
 import { processRequest } from './processor.js';
 import { handleExhausted, reconcileOnce } from './sweeper.js';
 
@@ -37,6 +39,16 @@ async function main(): Promise<void> {
     estimateMicros: config.LLM_ESTIMATE_MICROS,
   });
 
+  // Email (006): send the one clarification question + relay pending outbound mail. Off unless an
+  // EMAIL_SIGNING_KEY is set; SMTP transport only when MAIL_SMTP_HOST is set (else an in-memory no-op).
+  const email = config.EMAIL_SIGNING_KEY
+    ? new EmailService(db, { signingKey: config.EMAIL_SIGNING_KEY, fromAddress: config.MAIL_FROM, replyDomain: config.MAIL_REPLY_DOMAIN })
+    : undefined;
+  const mailTransport: EmailTransport = config.MAIL_SMTP_HOST
+    ? new MailpitTransport({ host: config.MAIL_SMTP_HOST, port: config.MAIL_SMTP_PORT, from: config.MAIL_FROM })
+    : new InMemoryEmailTransport();
+  if (email) logger.info({ smtp: config.MAIL_SMTP_HOST ?? 'in-memory' }, 'email enabled');
+
   const queue = new PgBossQueue({
     ownerUrl: config.DATABASE_MIGRATOR_URL,
     maxAttempts: config.MAX_PROCESSING_ATTEMPTS,
@@ -49,10 +61,14 @@ async function main(): Promise<void> {
     await processRequest(db, payload);
     await queue.publish(PIPELINE_QUEUE, payload);
   });
-  // Stage 2 (003): the AI pipeline.
+  // Stage 2 (003): the AI pipeline, then orders (004) and the clarification email (006).
   await queue.work(PIPELINE_QUEUE, async (payload) => {
     await pipeline.run(payload);
     await orders.createFromExtraction(payload.shopId, payload.requestId); // 004: extracted → ordered
+    if (email) {
+      const st = await intakeState(db, payload.shopId, payload.requestId);
+      if (st === 'awaiting_customer') await email.enqueueFollowUp(payload.shopId, payload.requestId); // 006
+    }
   });
   // Exhausted work in either stage parks needs_review.
   await queue.work(INTAKE_DLQ, (payload) => handleExhausted(db, payload));
@@ -62,6 +78,11 @@ async function main(): Promise<void> {
     reconcileOnce(db, queue).catch((err: unknown) =>
       logger.error({ err: err instanceof Error ? err.message : String(err) }, 'reconcile failed'),
     );
+    if (email) {
+      email.relayPending(mailTransport).catch((err: unknown) =>
+        logger.error({ err: err instanceof Error ? err.message : String(err) }, 'email relay failed'),
+      );
+    }
   };
   await reconcileOnce(db, queue);
   const timer = setInterval(runReconcile, config.RECONCILER_INTERVAL_MS);
@@ -76,6 +97,14 @@ async function main(): Promise<void> {
   };
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGINT', () => void shutdown());
+}
+
+/** Read a request's current state within its tenant (ids only). */
+async function intakeState(db: Db, shopId: string, requestId: string): Promise<string | null> {
+  return db.withTenant(shopId, async (c) => {
+    const r = await c.query<{ state: string }>(`SELECT state FROM requests WHERE id = $1`, [requestId]);
+    return r.rows[0]?.state ?? null;
+  });
 }
 
 main().catch((err: unknown) => {

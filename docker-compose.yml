@@ -17,6 +17,15 @@ services:
       timeout: 3s
       retries: 30
 
+  # Local email sink (006): SMTP on 1025, web UI on 127.0.0.1:8025. Keyless; safe to always run.
+  mailpit:
+    image: axllent/mailpit:v1.21.3
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+    expose:
+      - "1025"
+
   api:
     build: .
     depends_on:
@@ -34,6 +43,10 @@ services:
       WEB_FORM_SIGNING_KEY: ${WEB_FORM_SIGNING_KEY:-}
       WEB_ALLOWED_ORIGINS: ${WEB_ALLOWED_ORIGINS:-}
       TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
+      # Email (006): inbound webhook on the api. Off unless both are set.
+      EMAIL_SIGNING_KEY: ${EMAIL_SIGNING_KEY:-}
+      EMAIL_WEBHOOK_SECRET: ${EMAIL_WEBHOOK_SECRET:-}
+      MAIL_REPLY_DOMAIN: ${MAIL_REPLY_DOMAIN:-reply.riverbend.example}
     ports:
       - "8080:8080"
     command: ["npm", "run", "start:api"]
@@ -84,6 +97,12 @@ services:
       QUEUE_EXPIRE_SECONDS: "120"
       RECONCILER_INTERVAL_MS: "10000"
       LOG_LEVEL: info
+      # Email (006): worker sends outbound + relays. Off unless EMAIL_SIGNING_KEY is set; SMTP via Mailpit.
+      EMAIL_SIGNING_KEY: ${EMAIL_SIGNING_KEY:-}
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-mailpit}
+      MAIL_SMTP_PORT: "1025"
+      MAIL_FROM: ${MAIL_FROM:-Riverbend Cycles <no-reply@riverbend.example>}
+      MAIL_REPLY_DOMAIN: ${MAIL_REPLY_DOMAIN:-reply.riverbend.example}
       # Real provider via the proxy — OPT-IN. Empty by default → the worker uses the FakeGateway (empty
       # strings are treated as unset by config). Set these in .env + run `--profile llm` to go live.
       # NOTE: the worker gets NO OPENAI_API_KEY — only the proxy endpoint, the logical model name, and

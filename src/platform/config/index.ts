@@ -46,6 +46,14 @@ const ConfigSchema = z.object({
   WEB_ALLOWED_ORIGINS: z.string().optional(),
   // Cloudflare Turnstile secret; when set, the real bot-check verifier is used (else a passing fake).
   TURNSTILE_SECRET: z.string().optional(),
+  // Slice 006 email (D10). The inbound webhook is OFF unless EMAIL_SIGNING_KEY + EMAIL_WEBHOOK_SECRET
+  // are set; the worker sends outbound mail only when MAIL_SMTP_HOST is set (else it no-ops locally).
+  EMAIL_SIGNING_KEY: z.string().optional(),       // signs reply tokens (reply+<token>@) — reply correlation
+  EMAIL_WEBHOOK_SECRET: z.string().optional(),     // HMAC secret for the inbound webhook signature
+  MAIL_SMTP_HOST: z.string().optional(),           // e.g. "mailpit" (compose) / "localhost"
+  MAIL_SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  MAIL_FROM: z.string().default('Riverbend Cycles <no-reply@riverbend.example>'),
+  MAIL_REPLY_DOMAIN: z.string().default('reply.riverbend.example'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

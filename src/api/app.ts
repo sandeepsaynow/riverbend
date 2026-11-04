@@ -21,6 +21,8 @@ import { registerOrdersRoutes } from '../modules/orders/routes.js';
 import { registerHealthRoutes } from '../modules/health/routes.js';
 import { WebService } from '../modules/web/index.js';
 import { registerWebRoutes } from './web-routes.js';
+import { EmailService } from '../modules/email/index.js';
+import { registerEmailWebhook } from './email-webhook.js';
 
 export interface AppDeps {
   config: Config;
@@ -33,13 +35,16 @@ export interface AppDeps {
   orders: OrdersService;
   /** Optional public web form (005); mounted only when provided (needs WEB_FORM_SIGNING_KEY). */
   web?: WebService;
+  /** Optional inbound email webhook (006); mounted only when provided + EMAIL_WEBHOOK_SECRET set. */
+  email?: EmailService;
 }
 
 /** Compose the HTTP app. Health is public; /admin requires an admin credential; /v1 a shop one. */
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.use(helmet());
-  app.use(express.json({ limit: '64kb' }));
+  // Capture the raw body so the email webhook can verify its HMAC signature over exact bytes (006).
+  app.use(express.json({ limit: '64kb', verify: (req, _res, buf) => { (req as { rawBody?: Buffer }).rawBody = buf; } }));
   app.use(pinoHttp({ logger: deps.logger }));
   app.use(rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: true, legacyHeaders: false }));
 
@@ -65,6 +70,11 @@ export function createApp(deps: AppDeps): Express {
   if (deps.web) {
     const origins = (deps.config.WEB_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     registerWebRoutes(app, { web: deps.web, allowedOrigins: origins });
+  }
+
+  // Inbound email webhook (006), OUTSIDE shop auth — authenticated by HMAC signature. Off unless configured.
+  if (deps.email && deps.config.EMAIL_WEBHOOK_SECRET) {
+    registerEmailWebhook(app, { email: deps.email, webhookSecret: deps.config.EMAIL_WEBHOOK_SECRET });
   }
 
   app.use(errorHandler(deps.logger));

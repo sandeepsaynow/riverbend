@@ -53,7 +53,6 @@ export class PipelineService {
   async run(payload: { requestId: string; shopId: string }, opts: { isReply?: boolean } = {}): Promise<void> {
     const { requestId, shopId } = payload;
     const period = this.period();
-    const step = opts.isReply ? 'extract-reply' : 'extract';
 
     const loaded = await this.db.withTenant(shopId, (c) =>
       c.query<{ state: string; content: string }>(
@@ -70,7 +69,11 @@ export class PipelineService {
     );
     const alreadyAsked = fu.rows.length > 0;
     let content = row.content;
-    if (alreadyAsked && fu.rows[0]!.reply_content) content = `${content}\n${fu.rows[0]!.reply_content}`;
+    const hasReply = alreadyAsked && !!fu.rows[0]!.reply_content;
+    if (hasReply) content = `${content}\n${fu.rows[0]!.reply_content}`;
+    // A reply is being consumed if the caller said so OR a reply is present (resumed via the queue).
+    // Distinct budget-receipt step so the reply call is charged separately from the first extraction.
+    const step = opts.isReply || hasReply ? 'extract-reply' : 'extract';
 
     // Ensure a budget row (operator cap preserved if already set).
     if (!(await this.budget.usage(shopId, period))) {

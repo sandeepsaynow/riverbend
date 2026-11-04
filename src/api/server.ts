@@ -11,6 +11,7 @@ import { IntakeService } from '../modules/intake/index.js';
 import { OrdersService } from '../modules/orders/index.js';
 import { WebService } from '../modules/web/index.js';
 import { CloudflareTurnstileVerifier, FakeTurnstileVerifier } from '../modules/web/turnstile.js';
+import { EmailService } from '../modules/email/index.js';
 import { createApp } from './app.js';
 
 const CATALOG_PATH = process.env.CATALOG_PATH ?? resolve(process.cwd(), 'catalog/catalog.json');
@@ -59,8 +60,14 @@ async function main(): Promise<void> {
     : undefined;
   if (web) logger.info('public web form enabled (/f)');
 
+  // Inbound email webhook (006) — only with a signing key + webhook secret (fail-closed).
+  const email = config.EMAIL_SIGNING_KEY
+    ? new EmailService(db, { signingKey: config.EMAIL_SIGNING_KEY, fromAddress: config.MAIL_FROM, replyDomain: config.MAIL_REPLY_DOMAIN })
+    : undefined;
+  if (email && config.EMAIL_WEBHOOK_SECRET) logger.info('inbound email webhook enabled (/webhooks/email)');
+
   // 6. Serve.
-  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}) });
+  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}), ...(email ? { email } : {}) });
   app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'api listening'));
 }
 
