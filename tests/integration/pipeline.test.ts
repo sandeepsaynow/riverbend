@@ -6,6 +6,27 @@ import { CatalogService } from '../../src/modules/catalog/index.js';
 import { BudgetService } from '../../src/modules/budget/index.js';
 import { PipelineService } from '../../src/modules/pipeline/index.js';
 import { FakeGateway } from '../../src/platform/llm/fake-gateway.js';
+import { BudgetExceededError, type ExtractionInput, type LlmGateway } from '../../src/platform/llm/index.js';
+
+const TUNE_FORM = { kind: 'repair', bikes: [{ bikeNumber: 1, issues: ['tune'], serviceCodes: ['TUNE_BASIC'] }], urgency: 'normal', dateWords: null, questionDraft: null };
+
+/** Reports a proxy-calculated cost (FR-007 real-cost capture), zero network. */
+class CostGateway implements LlmGateway {
+  readonly name = 'cost-fake';
+  lastCostMicros: number | undefined;
+  constructor(private readonly costMicros: number) {}
+  async extract(_input: ExtractionInput): Promise<unknown> {
+    this.lastCostMicros = this.costMicros;
+    return TUNE_FORM;
+  }
+}
+/** Simulates the budget authority denying admission before the provider (I4 fail-closed), zero network. */
+class RejectGateway implements LlmGateway {
+  readonly name = 'reject-fake';
+  async extract(_input: ExtractionInput): Promise<unknown> {
+    throw new BudgetExceededError('proxy denied admission (test)');
+  }
+}
 
 const PERIOD = '2026-09';
 let t: TestDb;
@@ -118,5 +139,39 @@ describe('AI pipeline (003) against the fake gateway', () => {
     expect(await state(sub.requestId)).toBe('held_budget');
     const calls = await t.db.adminQuery<{ n: string }>(`SELECT count(*)::text AS n FROM llm_calls WHERE request_id=$1`, [sub.requestId]);
     expect(Number(calls.rows[0]!.n)).toBe(0); // nothing reserved/charged at the cap
+  });
+});
+
+describe('budget migration (1.2.0): real-cost capture + fail-closed proxy rejection', () => {
+  it('settles the ledger at the proxy-calculated real cost, not the estimate (FR-007)', async () => {
+    const shop = await createShop('rb-realcost');
+    await budget.ensureBudget(shop, PERIOD, 1_000_000);
+    const pipe = new PipelineService(t.db, new CostGateway(137), { defaultBudgetMicros: 1_000_000, estimateMicros: 2_000, period: PERIOD });
+    const sub = await intake.submit({ shopId: shop, source: 'api', submissionId: 'rc-1', content: 'tune please' });
+    await pipe.run({ requestId: sub.requestId, shopId: shop });
+    expect(await state(sub.requestId)).toBe('extracted');
+    const call = await t.db.adminQuery<{ cost_micros: string; status: string }>(
+      `SELECT cost_micros, status FROM llm_calls WHERE request_id=$1 AND step='extract'`, [sub.requestId]);
+    expect(call.rows[0]!.status).toBe('settled');
+    expect(Number(call.rows[0]!.cost_micros)).toBe(137); // real proxy cost, not the 2000 estimate
+    const usage = await budget.usage(shop, PERIOD);
+    expect(usage!.spentMicros).toBe(137);
+    expect(usage!.reservedMicros).toBe(0);
+  });
+
+  it('a proxy budget rejection parks held_budget without retry (I4 fail-closed)', async () => {
+    const shop = await createShop('rb-failclosed');
+    await budget.ensureBudget(shop, PERIOD, 1_000_000); // cap has room; the PROXY is what refuses
+    const pipe = new PipelineService(t.db, new RejectGateway(), { defaultBudgetMicros: 1_000_000, estimateMicros: 2_000, period: PERIOD });
+    const sub = await intake.submit({ shopId: shop, source: 'api', submissionId: 'fc-1', content: 'tune please' });
+    await pipe.run({ requestId: sub.requestId, shopId: shop });
+    expect(await state(sub.requestId)).toBe('held_budget');
+    // The attempt was recorded then settled to 0 (no charge), and not retried a second time.
+    const calls = await t.db.adminQuery<{ cost_micros: string; status: string }>(
+      `SELECT cost_micros, status FROM llm_calls WHERE request_id=$1 AND step='extract'`, [sub.requestId]);
+    expect(calls.rows).toHaveLength(1); // single attempt, no escalation retry
+    expect(Number(calls.rows[0]!.cost_micros)).toBe(0);
+    const usage = await budget.usage(shop, PERIOD);
+    expect(usage!.spentMicros).toBe(0); // fail-closed: nothing charged
   });
 });

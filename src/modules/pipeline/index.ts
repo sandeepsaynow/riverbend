@@ -1,5 +1,5 @@
 import type { Db } from '../../platform/db/index.js';
-import type { LlmGateway } from '../../platform/llm/index.js';
+import { BudgetExceededError, type LlmGateway } from '../../platform/llm/index.js';
 import { BudgetService } from '../budget/index.js';
 import { decide } from './decide.js';
 import { ExtractionInvalid, validateExtraction, type Extraction } from './schema.js';
@@ -97,9 +97,16 @@ export class PipelineService {
         raw = await this.gateway.extract({ content, allowedServiceCodes });
       } catch (err) {
         if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, 0);
-        throw err; // let pg-boss retry (outage handling is slice 007)
+        if (err instanceof BudgetExceededError) {
+          // The budget authority denied admission before the provider (I4, fail-closed). Park, no retry.
+          await this.setState(shopId, requestId, 'held_budget');
+          return;
+        }
+        throw err; // other failures → let pg-boss retry (outage handling is slice 007)
       }
-      if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, this.opts.estimateMicros);
+      // Settle at the proxy-calculated real cost when available (FR-007), else the estimate.
+      const costMicros = this.gateway.lastCostMicros ?? this.opts.estimateMicros;
+      if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, costMicros);
       try {
         extraction = validateExtraction(raw, codes);
         break;

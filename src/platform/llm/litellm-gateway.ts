@@ -1,4 +1,4 @@
-import type { ExtractionInput, LlmGateway } from './index.js';
+import { BudgetExceededError, type ExtractionInput, type LlmGateway } from './index.js';
 
 /**
  * Real provider adapter (D6): all model traffic goes through a LiteLLM proxy (digest-pinned,
@@ -82,6 +82,8 @@ export class LiteLlmGateway implements LlmGateway {
   readonly name = 'litellm';
   /** Usage from the most recent successful call (for smoke tests / cost telemetry). */
   lastUsage: LlmUsage | undefined;
+  /** Proxy-calculated cost of the most recent call in whole micros (from x-litellm-response-cost). */
+  lastCostMicros: number | undefined;
 
   constructor(
     private readonly config: LiteLlmConfig,
@@ -131,9 +133,24 @@ export class LiteLlmGateway implements LlmGateway {
     }
 
     if (!res.ok) {
+      // Budget rejection (I4, fail-closed): the proxy denies admission over cap. LiteLLM returns 400
+      // with a budget error; some deployments use 429. Detect from a header-free status probe so no
+      // response body (which may echo content) is read or logged (VII).
+      if (res.status === 400 || res.status === 429) {
+        const flag = res.headers.get('x-litellm-error-type') ?? '';
+        // A 429 is budget/limit by convention here; a 400 is budget only when the proxy marks it.
+        if (res.status === 429 || /budget/i.test(flag)) {
+          throw new BudgetExceededError(`proxy denied admission (HTTP ${res.status})`);
+        }
+      }
       // Status only — an error body may echo the prompt/content, which must never be logged (VII).
       throw new Error(`LiteLLM proxy returned HTTP ${res.status}`);
     }
+
+    // Proxy-calculated cost (USD) → whole micros. Absent on some configs → leave undefined (settle est).
+    const costHeader = res.headers.get('x-litellm-response-cost');
+    const costUsd = costHeader !== null ? Number(costHeader) : NaN;
+    this.lastCostMicros = Number.isFinite(costUsd) && costUsd >= 0 ? Math.round(costUsd * 1e6) : undefined;
 
     let body: {
       model?: string;
