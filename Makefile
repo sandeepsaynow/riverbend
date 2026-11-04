@@ -1,4 +1,4 @@
-.PHONY: up down migrate test typecheck lint logs
+.PHONY: up down migrate test typecheck lint logs eval eval-live
 
 # One-command local run (FR-012): start Postgres + api; the api migrates before serving (FR-022).
 up:
@@ -28,3 +28,12 @@ typecheck:
 
 lint:
 	npm run lint
+
+# 40-message evaluation (008). `eval` is deterministic + free (recorded golden; Docker for the DB).
+# `eval-live` uses the real provider via LiteLLM (gated B1, costs money) — run the proxy first
+# (`docker compose --profile llm up -d litellm`) and keep the aggregate spend under USD 20.
+eval:
+	npx tsx eval/run.ts recorded
+
+eval-live:
+	npx tsx eval/run.ts live
