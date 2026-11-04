@@ -26,10 +26,20 @@ async function main(): Promise<void> {
   const logger = createLogger(config.LOG_LEVEL);
   const db = new Db({ appUrl: config.DATABASE_URL, adminUrl: config.DATABASE_ADMIN_URL });
 
+  // Native budget mode: the proxy enforces per-shop team budgets and the worker provisions per-shop
+  // virtual keys. In this mode the gateway carries NO default key — every inference MUST present a
+  // per-shop virtual key (fail-closed); LLM_API_KEY is NOT an inference fallback and the master key is
+  // never used for inference. Legacy mode keeps LLM_API_KEY as the single proxy key.
+  const nativeBudget = config.BUDGET_AUTHORITY === 'litellm' && !!config.LLM_BASE_URL && !!config.LLM_MASTER_KEY;
   const baseGateway: LlmGateway =
     config.LLM_BASE_URL && config.LLM_MODEL
       ? new LiteLlmGateway(
-          { baseUrl: config.LLM_BASE_URL, model: config.LLM_MODEL, apiKey: config.LLM_API_KEY, timeoutMs: config.LLM_TIMEOUT_MS },
+          {
+            baseUrl: config.LLM_BASE_URL,
+            model: config.LLM_MODEL,
+            ...(nativeBudget ? {} : { apiKey: config.LLM_API_KEY }),
+            timeoutMs: config.LLM_TIMEOUT_MS,
+          },
           logger,
         )
       : new FakeGateway();
@@ -48,8 +58,8 @@ async function main(): Promise<void> {
   // Budget authority (2.0.0): in 'litellm' mode with a proxy + master key, provision a team/virtual key
   // per shop and let the proxy enforce. Otherwise (legacy, or offline fake) no provisioner is wired.
   let resolveKey: ((shopId: string) => Promise<string>) | undefined;
-  if (config.BUDGET_AUTHORITY === 'litellm' && config.LLM_BASE_URL && config.LLM_MASTER_KEY) {
-    const admin = new LiteLlmAdmin({ baseUrl: config.LLM_BASE_URL, masterKey: config.LLM_MASTER_KEY });
+  if (nativeBudget) {
+    const admin = new LiteLlmAdmin({ baseUrl: config.LLM_BASE_URL!, masterKey: config.LLM_MASTER_KEY! });
     const provisioner = new LiteLlmProvisioner(db, admin, { budgetUsd: config.LITELLM_TEAM_BUDGET_USD, budgetDuration: config.LITELLM_BUDGET_DURATION });
     resolveKey = (shopId) => provisioner.ensureVirtualKey(shopId);
     logger.info({ budgetAuthority: 'litellm' }, 'budget enforcement: LiteLLM-native (per-shop teams/keys)');
