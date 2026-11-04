@@ -321,3 +321,11 @@ or live model):
   no auto-cancel (a person follows up). A genuinely vague message → exactly one clarification.
 If a message is clear routine maintenance but you still see a clarification, check the extraction row
 (`SELECT bikes FROM extractions WHERE request_id=…`) — empty serviceCodes indicate a model/prompt gap (D22).
+
+## Cancellation requests (D23)
+A message to cancel/reschedule/change an existing order (e.g. "cancel the chain appointment — I fixed it
+myself") is routed to **needs_review** with reason **`cancellation_requires_verification`** and shows in the
+staff **Needs attention** view. It creates **no** work order, **never** auto-cancels an existing order, and
+sends **no** clarification email — a staff member verifies the customer actually owns the referenced order
+(ownership is never inferred from the email address or wording) and acts manually. There is deliberately no
+self-service cancellation/OTP flow.

@@ -31,6 +31,10 @@ export function gateQuestion(draft: string | null | undefined): string {
  */
 export function decide(ex: Extraction, alreadyAsked: boolean): Decision {
   if (ex.kind === 'wrong_shop') return { outcome: 'needs_review', reason: 'wrong_shop_suspected' };
+  // Cancellation/change of an existing order (D23): a human verifies ownership — we NEVER auto-cancel,
+  // never create a work order, and never send a repair clarification. Order ownership is never inferred
+  // from email or message similarity; routed to needs_review for a person to handle.
+  if (ex.kind === 'cancellation') return { outcome: 'needs_review', reason: 'cancellation_requires_verification' };
   if (ex.kind === 'price_inquiry') return { outcome: 'answered' };
   if (ex.kind === 'delegation') return { outcome: 'extracted', flagged: true }; // flagged general inspection
 

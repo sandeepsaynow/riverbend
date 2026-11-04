@@ -81,3 +81,18 @@ now fixed by code guards (commit a77fc3e) so the outcome no longer depends on mo
 
 Compare with the deterministic golden run in `docs/results.md` and the pre-fix run in `docs/results-live-before-guards.md`.
 
+
+---
+
+## Post-fix single-message re-run — m-1038 (2026-11-04, D23) — NEW RUN, not a full 40-message rerun
+
+The original 40-message results above are preserved as historical evidence. This is a **separate, dated,
+single-message** live re-run of only **m-1038** after implementing D23 (cancellation-intent handling). The
+rest of the 40 were **not** rerun.
+
+- **m-1038** ("Please cancel the chain appointment I asked about this morning. I fixed it myself.")
+  - **Before (historical, above):** `awaiting_customer` with an irrelevant repair clarification. ❌
+  - **After (D23, real OpenAI via LiteLLM, one controlled call):** extraction `kind = cancellation` →
+    `needs_review` / `cancellation_requires_verification`; **0 work orders, 0 clarification follow-ups,
+    0 emails**. ✅ No automatic cancellation, no new order, no repair clarification. (Order ownership is
+    never inferred from email or wording — a person verifies.)

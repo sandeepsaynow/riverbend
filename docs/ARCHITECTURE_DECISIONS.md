@@ -562,3 +562,25 @@ one-question policy (I6), `decide()` still owns the outcome. Unknown bike type /
 absent (dateWords null) — never fabricated, never a clarification trigger. **Verified live:** "general
 servicing" → TUNE_BASIC, `ordered`, zero clarification emails. **Door:** two-way (prompt + fake, no schema
 change). See `specs/003-ai-pipeline/`.
+
+## D23 — Cancellation intent → human review (never auto-mutate)
+
+**Problem (live m-1038):** "Please cancel the chain appointment … I fixed it myself." produced
+`awaiting_customer` + an irrelevant repair clarification. Under D22 cancellation was lumped into `unclear`
+(→ `decide()` asks a question).
+
+**Pick:** classify cancellation as its own kind and route it **deterministically to `needs_review`** with
+reason **`cancellation_requires_verification`** — no work order created, no existing order auto-cancelled,
+no repair clarification email. `kind` gains `'cancellation'` (additive to the Zod schema AND the LiteLLM
+`response_format` json_schema enum — both now sourced from one `REQUEST_KINDS` constant so they can't
+drift; `extractions.kind` is free text, so **no DB migration**). `decide()` returns the needs_review reason;
+the existing pipeline stores it in `last_error`, which the staff **needs-attention** view already renders.
+
+**Why human review, not automated mutation:** a cancellation must prove **ownership** of the referenced
+order. We deliberately **never infer which order from the customer's email address or natural-language
+similarity** (that would let anyone cancel another customer's order by paraphrase/email match). There is
+no cancellation UI / OTP / confirmation workflow in scope, so the safe action is to park the request for a
+person to verify and act — preserving the original message, shop, and customer contact. Idempotency, tenant
+isolation (RLS), catalog pricing (I5) and LiteLLM budgets are untouched. **Verified live:** m-1038 →
+`needs_review`/`cancellation_requires_verification`, 0 orders/clarifications/emails. **Door:** two-way
+(prompt + schema enum + one decide branch; no migration). Refines D22; see `specs/003-ai-pipeline/`.

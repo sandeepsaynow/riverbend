@@ -177,3 +177,15 @@ no-AI notice; abandoned reservations are reaped. AI spend is stored in **whole m
   hardcoded phrase-matching in the production classifier); the offline FakeGateway mirrors it deterministically.
 - **FR-cls3:** unknown bike type / date are absent (dateWords null), never fabricated, never a clarification
   trigger. Catalog remains the only price source (I5); schema+catalog validation (I3) and `decide()` unchanged.
+
+## Amendment (D23, 2026-11-04) — cancellation intent → human review
+- **FR-cxl1:** a request to **cancel/reschedule/change an existing order** (e.g. "cancel the chain
+  appointment … I fixed it myself") → extraction `kind = "cancellation"` → `decide()` returns
+  `needs_review` with reason **`cancellation_requires_verification`**. No work order is created, no existing
+  order is auto-cancelled, and **no repair clarification email** is sent.
+- **FR-cxl2:** `kind` gains `cancellation` in BOTH the Zod schema and the LiteLLM `response_format`
+  json_schema enum (unified via `REQUEST_KINDS` — single source of truth). `extractions.kind` is free text →
+  no DB migration. Backward compatible.
+- **FR-cxl3:** order **ownership is never inferred** from the customer email or message similarity — a human
+  verifies. Original message, shop and customer contact are preserved; the reason shows in the staff
+  needs-attention view. Idempotency, tenant isolation, catalog pricing (I5) and budgets are unchanged.

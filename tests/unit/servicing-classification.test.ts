@@ -48,10 +48,10 @@ describe('003/D5 — catalog servicing classification (general-servicing regress
     expect(r.decision).toEqual({ outcome: 'answered' });
   });
 
-  it('cancellation → no fabricated service and no order (a person follows up)', async () => {
+  it('cancellation → needs_review (D23), no fabricated service, no order, no clarification', async () => {
     const r = await classify('Cancel my previous repair');
     expect(r.codes).toEqual([]); // no TUNE_BASIC fabricated
-    expect(r.decision.outcome).toBe('ask'); // routed to a human-style follow-up, NOT "extracted" (no order), never auto-cancel
+    expect(r.decision).toEqual({ outcome: 'needs_review', reason: 'cancellation_requires_verification' }); // never auto-cancel; a person verifies
   });
 
   it('a non-specific brake problem is NOT auto TUNE_BASIC — it asks (brake-related)', async () => {

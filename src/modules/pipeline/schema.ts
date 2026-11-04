@@ -5,8 +5,12 @@ import { z } from 'zod';
  * anything failing — bad shape, or a service code not in the catalog — is rejected and never persisted
  * as a work order. The model proposes structure only; it never supplies prices or chooses identity.
  */
+/** The request kinds the model may classify into. SINGLE SOURCE OF TRUTH — the LiteLLM json_schema
+ *  `response_format` imports this so the structured-output enum can never drift from validation (D23). */
+export const REQUEST_KINDS = ['repair', 'price_inquiry', 'wrong_shop', 'delegation', 'unclear', 'cancellation'] as const;
+
 export const ExtractionSchema = z.object({
-  kind: z.enum(['repair', 'price_inquiry', 'wrong_shop', 'delegation', 'unclear']),
+  kind: z.enum(REQUEST_KINDS),
   bikes: z.array(
     z.object({
       bikeNumber: z.number().int().positive(),

@@ -1,4 +1,5 @@
 import { BudgetExceededError, type ExtractCtx, type ExtractionInput, type LlmGateway } from './index.js';
+import { REQUEST_KINDS } from '../../modules/pipeline/schema.js';
 
 /**
  * Real provider adapter (D6): all model traffic goes through a LiteLLM proxy (digest-pinned,
@@ -44,8 +45,10 @@ const SYSTEM_PROMPT = [
   '- A request to inspect/diagnose, or a symptom the customer cannot localize ("something feels wrong", "a',
   '  noise I can\'t locate") → the general inspection code (GENERAL_INSPECT).',
   '- A specific fault → its specific service (e.g. brake pads → the brake-pad code), not TUNE_BASIC.',
-  '- A price-only question → kind "price_inquiry" (no work order). A request to cancel or change an existing',
-  '  order → leave serviceCodes empty (a person follows up); do not create or cancel an order.',
+  '- A price-only question → kind "price_inquiry" (no work order).',
+  '- A request to cancel, reschedule, or change an existing order (even "I fixed it myself, cancel it") →',
+  '  kind "cancellation" (serviceCodes empty). Never create or cancel an order and never ask a repair',
+  '  clarification — a person verifies the request. Do NOT infer which order from the email or wording.',
   'Only when no allowed code applies and the intent is genuinely unclear, leave serviceCodes empty and set',
   'kind "unclear". Do not guess prices, dates, or shops; unknown date → dateWords null (never invent one).',
   'Report issues in the customer\'s own words. If genuinely ambiguous, put one short clarifying question in',
@@ -68,7 +71,7 @@ function responseFormat(allowed: readonly string[]): Record<string, unknown> {
         additionalProperties: false,
         required: ['kind', 'bikes', 'urgency', 'dateWords', 'questionDraft'],
         properties: {
-          kind: { type: 'string', enum: ['repair', 'price_inquiry', 'wrong_shop', 'delegation', 'unclear'] },
+          kind: { type: 'string', enum: [...REQUEST_KINDS] }, // single source of truth (schema.ts) — no drift
           bikes: {
             type: 'array',
             items: {

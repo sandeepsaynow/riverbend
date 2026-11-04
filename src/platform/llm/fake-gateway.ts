@@ -19,10 +19,10 @@ export class FakeGateway implements LlmGateway {
     }
     // Price-only question → no work order (checked before service mapping so "how much for an overhaul?" is a quote).
     if (has('how much', 'price', 'cost', 'quote', 'how expensive')) return form('price_inquiry', []);
-    // Cancel/change an existing order → NEVER a new work order and NEVER an auto-cancel; a person follows up.
+    // Cancel/change an existing order (D23) → kind 'cancellation' → decide() routes to needs_review
+    // (a person verifies ownership); NEVER a new/auto-cancelled order and NEVER a repair clarification.
     if (has('cancel', 'reschedule')) {
-      return unclearForm([{ bikeNumber: 1, issues: ['wants to change or cancel an existing order'], serviceCodes: [] }],
-        'It looks like you want to change or cancel an existing order — a team member will follow up.');
+      return form('cancellation', [{ bikeNumber: 1, issues: ['wants to cancel or change an existing order'], serviceCodes: [] }]);
     }
     if (has('wrong shop', 'lakeshore team')) return form('wrong_shop', []);
     if (has('whatever it needs', 'whatever you think')) return form('delegation', []);

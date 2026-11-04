@@ -241,3 +241,15 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
 - **Live (real OpenAI via LiteLLM):** "My bike needs general servicing." → extraction `["TUNE_BASIC"]`,
   request `ordered`, **zero clarification emails**. TUNE_BASIC catalog price $65 (deterministic + prior live
   $110 order). No cross-tenant leak; email/auth/CSRF/idempotency suites unaffected.
+
+## CHECKPOINT 2026-11-04 (D23) — cancellation intent → needs_review (m-1038 fixed)
+
+- **Root cause:** cancellation classified `unclear` → repair clarification (awaiting_customer). The real
+  model also couldn't emit a new kind until the LiteLLM json_schema `response_format` enum included it
+  (found by re-running m-1038 live). **Fix:** `REQUEST_KINDS` single source of truth adds `cancellation` to
+  BOTH the Zod schema and the json_schema enum; `decide()` routes it to `needs_review` /
+  `cancellation_requires_verification` (no order, no auto-cancel, no clarification email). No DB migration.
+- **Tests:** tests/integration/cancellation.test.ts (8, real PostgreSQL). Full suite **189/189**;
+  typecheck + lint clean; compose valid.
+- **Live (post-fix, dated single-message re-run; 40-message history preserved):** m-1038 → `needs_review` /
+  `cancellation_requires_verification`, `kind=cancellation`, 0 work orders / 0 follow-ups / 0 emails.

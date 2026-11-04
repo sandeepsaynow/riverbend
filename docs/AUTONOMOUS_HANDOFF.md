@@ -247,3 +247,8 @@ service") now maps to TUNE_BASIC with NO clarification; explicit overhaul→TUNE
 specific fault→its code; price→price_inquiry; cancel→no order. Semantic guidance in the extraction system
 prompt (litellm-gateway.ts) + mirrored in FakeGateway. +11 tests → 181/181; live OpenAI confirmed
 (general servicing → TUNE_BASIC, ordered $65, no clarification email).
+
+**CANCELLATION INTENT (2026-11-04, D23):** cancel/reschedule/change → kind "cancellation" → needs_review
+(`cancellation_requires_verification`); no order, no auto-cancel, no clarification email; ownership never
+inferred from email/similarity (human verifies). Added `cancellation` to REQUEST_KINDS (Zod + LiteLLM
+json_schema enum — unified). No migration. 189/189; live m-1038 → needs_review, 0 orders/emails.

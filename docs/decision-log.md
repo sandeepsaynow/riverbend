@@ -160,3 +160,13 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   FakeGateway for deterministic tests. Catalog/I3/I5/I6/decide() unchanged. ARCHITECTURE_DECISIONS D22.
   11 deterministic tests + 1 live OpenAI call: "general servicing" → TUNE_BASIC, ordered ($65), no
   clarification email. 181/181.
+
+## 2026-11-04 — Feature 003 (D23): cancellation intent → needs_review (cancellation_requires_verification)
+
+- **Root cause (m-1038):** cancellation was classified `unclear` → decide() asked a repair clarification
+  (awaiting_customer). **Fix:** add kind `cancellation` (Zod + the LiteLLM json_schema enum, unified via
+  `REQUEST_KINDS` — the json_schema omission was why the live model couldn't emit it) → decide() routes to
+  `needs_review`/`cancellation_requires_verification`; no order, no auto-cancel, no clarification email.
+  Ownership is never inferred from email/similarity — a person verifies. No DB migration. ARCHITECTURE_
+  DECISIONS D23. 8 real-PG tests + 1 live OpenAI call (m-1038 → needs_review, 0 orders/emails). 189/189.
+  Post-fix m-1038 recorded as a dated single-message re-run in docs/results-live.md (40-message history kept).

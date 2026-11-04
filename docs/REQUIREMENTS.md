@@ -162,3 +162,5 @@ These require a human decision; see the dedicated section at the end of
 | P1 | **Portal double-submit CSRF** (D20.3): cookie-authed state-changing POSTs require an HttpOnly SameSite=Lax rb_csrf cookie matching a hidden _csrf field (origin-independent), plus the exact-origin allowlist; Referrer-Policy strict-origin-when-cross-origin. | D20.3 |
 
 | P1 | **Catalog classification taxonomy** (D22): routine maintenance→TUNE_BASIC (no clarification), explicit overhaul→TUNE_FULL, diagnostic→GENERAL_INSPECT, specific fault→its code, price→price_inquiry, cancel→no order; one clarification only when genuinely unclear. | D3/D5 → D22 |
+
+| P1 | **Cancellation intent** (D23): cancel/change requests → needs_review (`cancellation_requires_verification`); no order, no auto-cancel, no clarification; ownership never inferred from email/similarity (human verifies). | D23 |

@@ -204,3 +204,16 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   fabricate an order.
 - **Evidence:** 11 deterministic cases + 1 live OpenAI call (general servicing → TUNE_BASIC, ordered, no
   clarification). Resend/LiteLLM/intake/isolation untouched; 181/181.
+
+## 2026-11-04 — Feature 003 (D23): cancellation intent → needs_review
+
+- **Traced m-1038 live, not the ticket:** cancellation was `unclear` → repair clarification. Two-part fix:
+  add kind `cancellation` AND include it in the LiteLLM structured-output json_schema enum (the live model
+  literally could not emit it before — caught by re-running m-1038, not by assuming the tests covered it).
+  Unified both enums via `REQUEST_KINDS` so they can't drift again.
+- **Human review by design:** cancellation must prove order ownership; we never infer it from email or
+  wording (that would let anyone cancel another's order), and there is no OTP/confirmation UI in scope →
+  route to needs_review (`cancellation_requires_verification`). No order created/cancelled, no clarification
+  email; message/shop/contact preserved; reason shown in needs-attention. No DB migration.
+- **Evidence:** 8 real-PG tests (incl. unrelated-order-not-cancelled, cross-tenant, prompt-injection) + 1
+  live OpenAI call (m-1038 → needs_review, 0 orders/emails). Idempotency/isolation/pricing/budgets intact.

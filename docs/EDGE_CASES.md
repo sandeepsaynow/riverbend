@@ -175,7 +175,7 @@ These edge cases are introduced by our design, not the brief's dataset:
 | Diagnostic / unlocalized symptom | "inspect it", "something feels wrong", "a noise I can't locate" | **GENERAL_INSPECT** |
 | Specific repair | "replace the front brake pads" | the specific code (BRAKE_PADS…), never TUNE_BASIC by default |
 | Price inquiry | "how much is servicing?" | `price_inquiry`, no work order |
-| Cancellation / change | "cancel my previous repair" | no new order, **no auto-cancel**; a person follows up |
+| Cancellation / change | "cancel my previous repair", "I fixed it myself, cancel it" | **needs_review** (`cancellation_requires_verification`), no order, **no auto-cancel**, no clarification — a person verifies ownership (D23) |
 | Genuinely unclear | vague/empty | exactly one clarification (I6) |
 - Unknown bike type / requested date are represented as absent (dateWords null) — never fabricated and
   never a clarification trigger on their own.
