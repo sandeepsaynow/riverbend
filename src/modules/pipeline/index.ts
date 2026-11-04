@@ -2,6 +2,7 @@ import type { Db } from '../../platform/db/index.js';
 import { AiPausedError, BudgetExceededError, type LlmGateway } from '../../platform/llm/index.js';
 import { BudgetService } from '../budget/index.js';
 import { decide } from './decide.js';
+import { detectShopMismatch, hasBroadDelegation, hasMultiBikeSignal, shopToken } from './guards.js';
 import { ExtractionInvalid, validateExtraction, type Extraction } from './schema.js';
 export { PER_WHEEL } from './decide.js';
 
@@ -66,6 +67,17 @@ export class PipelineService {
     );
     const row = loaded.rows[0];
     if (!row || TERMINAL.has(row.state)) return; // unknown or already decided (idempotent)
+
+    // Shop-mismatch guard (m-1009): if the message explicitly addresses a DIFFERENT Riverbend shop,
+    // route to needs_review before any model call — never create an order, never transfer tenants.
+    const shopRow = await this.db.withTenant(shopId, (c) => c.query<{ slug: string }>(`SELECT slug FROM shops WHERE id = $1`, [shopId]));
+    const allShops = await this.db.adminQuery<{ slug: string }>(`SELECT slug FROM shops`);
+    const currentToken = shopToken(shopRow.rows[0]?.slug ?? '');
+    const allTokens = allShops.rows.map((s) => shopToken(s.slug));
+    if (detectShopMismatch(row.content, currentToken, allTokens)) {
+      await this.setStateWithError(shopId, requestId, 'needs_review', 'wrong_shop_suspected');
+      return;
+    }
 
     // Follow-up context (alreadyAsked + the reply text, if any).
     const fu = await this.db.withTenant(shopId, (c) =>
@@ -149,6 +161,17 @@ export class PipelineService {
     if (!extraction) {
       await this.setStateWithError(shopId, requestId, 'needs_review', `invalid_output: ${lastErr}`);
       return;
+    }
+
+    // Deterministic business-rule guards on the ORIGINAL message (code owns the outcome, not the model):
+    // (m-1025) broad delegation → the inspection path, never an invented repair list; reported issues
+    // are preserved as the inspection scope. (m-1032) drop model-invented extra bikes when the message
+    // signals only one — never invent bicycles.
+    if (hasBroadDelegation(row.content)) {
+      extraction = { ...extraction, kind: 'delegation' };
+    }
+    if (extraction.bikes.length > 1 && !hasMultiBikeSignal(row.content)) {
+      extraction = { ...extraction, bikes: [extraction.bikes[0]!] };
     }
 
     const decision = decide(extraction, alreadyAsked);
