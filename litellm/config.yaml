@@ -1,0 +1,12 @@
+# LiteLLM proxy configuration (D6): worker → LlmGateway → LiteLLM proxy → backing model.
+# The proxy is the single place that holds backing-provider keys and does routing/fallbacks. It reads
+# the key from its OWN environment (os.environ/...), so the key never appears in this file or in
+# Riverbend. Riverbend sends only the logical model name below as LLM_MODEL.
+model_list:
+  - model_name: riverbend-extract            # logical "class" the worker requests (D6: config names a class)
+    litellm_params:
+      model: openai/gpt-4o-mini              # backing provider/model; swap here to change providers
+      api_key: os.environ/OPENAI_API_KEY     # read from the proxy's env at runtime — value never stored here
+
+litellm_settings:
+  drop_params: true                          # tolerate provider-specific param differences behind the port

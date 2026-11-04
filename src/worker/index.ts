@@ -24,7 +24,10 @@ async function main(): Promise<void> {
 
   const gateway: LlmGateway =
     config.LLM_BASE_URL && config.LLM_MODEL
-      ? new LiteLlmGateway({ baseUrl: config.LLM_BASE_URL, model: config.LLM_MODEL, apiKey: config.LLM_API_KEY })
+      ? new LiteLlmGateway(
+          { baseUrl: config.LLM_BASE_URL, model: config.LLM_MODEL, apiKey: config.LLM_API_KEY, timeoutMs: config.LLM_TIMEOUT_MS },
+          logger,
+        )
       : new FakeGateway();
   logger.info({ gateway: gateway.name }, 'ai gateway selected');
 

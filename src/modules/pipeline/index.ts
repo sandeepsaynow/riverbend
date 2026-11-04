@@ -79,6 +79,10 @@ export class PipelineService {
 
     await this.setState(shopId, requestId, 'processing');
 
+    // The fixed service-code vocabulary the model may map onto (FR-002); code re-validates it (I3).
+    const codes = await this.catalogCodes();
+    const allowedServiceCodes = [...codes];
+
     // Extract with validation (I3) and one escalation retry; reserve-then-settle each attempt (I4).
     let extraction: Extraction | null = null;
     let lastErr = '';
@@ -90,14 +94,14 @@ export class PipelineService {
       }
       let raw: unknown;
       try {
-        raw = await this.gateway.extract({ content });
+        raw = await this.gateway.extract({ content, allowedServiceCodes });
       } catch (err) {
         if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, 0);
         throw err; // let pg-boss retry (outage handling is slice 007)
       }
       if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, this.opts.estimateMicros);
       try {
-        extraction = validateExtraction(raw, await this.catalogCodes());
+        extraction = validateExtraction(raw, codes);
         break;
       } catch (err) {
         if (!(err instanceof ExtractionInvalid)) throw err;

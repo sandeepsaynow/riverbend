@@ -32,10 +32,13 @@ const ConfigSchema = z.object({
   DEFAULT_SHOP_BUDGET_MICROS: z.coerce.number().int().nonnegative().default(5_000_000),
   // Estimated cost reserved per model call (micros). Settled to real cost after the call.
   LLM_ESTIMATE_MICROS: z.coerce.number().int().positive().default(2_000),
-  // Real provider (D6) — optional; when set, the worker uses LiteLLM instead of the fake (B1).
+  // Real provider (D6) — optional; when LLM_BASE_URL + LLM_MODEL are set, the worker routes through
+  // the LiteLLM proxy instead of the fake (B1). LLM_API_KEY is the *proxy* key, never the backing
+  // provider's key (that stays inside the proxy). LLM_TIMEOUT_MS bounds each model call.
   LLM_BASE_URL: z.string().optional(),
   LLM_MODEL: z.string().optional(),
   LLM_API_KEY: z.string().optional(),
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

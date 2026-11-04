@@ -7,6 +7,12 @@ export interface ExtractionInput {
   content: string;
   /** BCP-47 locale hint for same-language replies (no PII). */
   locale?: string;
+  /**
+   * The fixed catalog service codes the model may map issues onto (the "fixed 12", FR-002). This is
+   * form vocabulary, NOT prices and NOT a shop-list; the fake ignores it. Code still re-validates every
+   * returned code against the live catalog (I3), so the model can never widen the set.
+   */
+  allowedServiceCodes?: readonly string[];
 }
 
 export interface LlmGateway {
