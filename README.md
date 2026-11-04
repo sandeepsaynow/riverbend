@@ -94,14 +94,19 @@ code; shop identity always comes from the authenticated credential. The eight in
 I2 one order per request+bike, I3 validate-before-persist, I4 per-shop monthly cap, I5 catalog pricing
 in cents, I6 ≤1 follow-up, I7 no committed secrets, I8 reply path) each have a named test.
 
-### Budget (I4) — LiteLLM-native, with a safe fallback
+### Budget (I4) — LiteLLM-native (sole authority, 2.0.0)
 
-Per the amended constitution (1.2.0) and D7, per-shop budget **enforcement** moves to LiteLLM-native
-team/virtual-key budgets (fail-closed, calendar-month reset administered by Riverbend). This repo ships
-the verifiable pieces — **real proxy-cost capture** (`x-litellm-response-cost`) and **fail-closed
-`held_budget`** on a proxy rejection — behind a dual-path design; the legacy reserve-then-settle ledger
-remains the active, tested authority until the native "N concurrent → exactly K" acceptance test can be
-run **without paid budget-exhaustion calls**. See [`docs/decision-log.md`](docs/decision-log.md).
+Per constitution **2.0.0** + D7, **LiteLLM is the sole active budget authority**: one **team per shop**
+($5/month), restricted **virtual keys** the worker selects server-side (never the master key — that is
+provisioning-only), fail-closed admission (over-budget → HTTP 422 → `held_budget`), and proxy-calculated
+cost (`x-litellm-response-cost`) recorded per request for accounting. It has its **own isolated Postgres
+database**. Verified end-to-end at **zero cost** with a mock upstream + configured pricing (no paid
+calls): cost capture, budget rejection, tenant isolation, master-key-not-inference, no-double-count.
+
+**Honest limitation (measured):** native enforcement is eventually-consistent, so it can exceed a cap by
+**at most one in-flight call** — I4's guarantee was amended from a hard cap to this bounded soft cap
+(per-call cost ≈ micros, so immaterial against $5). `BUDGET_AUTHORITY=legacy` restores Riverbend's
+reserve-then-settle **hard cap** for rollback or a shop that needs one. See [`docs/decision-log.md`](docs/decision-log.md).
 
 ## Feature status
 

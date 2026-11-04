@@ -46,10 +46,12 @@ credential-lookup path. Attack tests hit the DB **directly as `app_user`**, not 
 ## Money (I4/I5, D7/D8)
 Prices are integer cents, computed in code as `catalog price × quantity` and **snapshotted** on the
 work-order line (a later catalog change never rewrites history). AI spend is integer **micros**. Budget
-enforcement is migrating (constitution 1.2.0) to **LiteLLM-native** per-shop team/virtual-key budgets
-(fail-closed, calendar-month); real proxy-calculated cost is captured per request, and a proxy
-budget-rejection parks `held_budget`. The legacy atomic reserve-then-settle ledger remains the active,
-tested authority until the native concurrency-atomicity test can run without paid calls.
+enforcement is **LiteLLM-native** (constitution 2.0.0, sole authority): one team per shop + restricted
+virtual keys (worker never uses the master key), fail-closed admission (over-budget → 422 →
+`held_budget`), proxy-calculated cost recorded per request; the proxy has its own isolated Postgres.
+Verified at zero cost via a mock-priced upstream. **Measured limitation:** enforcement is
+eventually-consistent (bounded one-in-flight-call overshoot) → I4 is a bounded soft cap;
+`BUDGET_AUTHORITY=legacy` restores Riverbend's reserve-then-settle hard cap for rollback.
 
 ## Failure is normal (VI, D13/D15)
 Every outgoing call has a timeout; **one** layer retries (pg-boss, the sole retry authority). Around the
