@@ -1,5 +1,93 @@
 # Autonomous Handoff — Riverbend
 
+<!-- ============================================================================================= -->
+## ✅ CHECKPOINT — 2026-11-04 (read this first; supersedes everything below)
+
+**Git:** branch `004-orders-staff`; **working tree CLEAN** (no uncommitted changes). Latest commits:
+`4cdad81` 010D staff pages+docs · `7a3459b` 010BC portal · `3174f6a` 010A Better Auth · `ba1cb5c` 010
+identity schema · `df78289` 008 reconstruction + 010 spec/D20 · `dbd5706` 009 · `a77fc3e` eval guards.
+Nothing pushed; no deploys.
+
+**Verification (just ran):** `npm run typecheck` ✅ · `npm run lint` ✅ (0 violations, 86 modules) ·
+`npx vitest run` → **123 passed / 123** (21 files, real PostgreSQL via Testcontainers; Docker required).
+**No known test failures.**
+
+**Features 001–010 all implemented + committed.** 001 foundation · 002 intake/queue · 003 AI pipeline
+(+real OpenAI via LiteLLM proxy) · 004 orders · 005 web form · 006 email (Mailpit) · 007 resilience ·
+008 eval+Terraform · 009 API-key lifecycle+Swagger · 010 staff auth portal (Better Auth).
+
+### Authentication state (item 5)
+- **Better Auth 1.7.16 (MIT) IS installed** (pinned exact; `@better-auth/cli 1.4.21`; installed with
+  `--legacy-peer-deps` for an unused `@sveltejs/kit` optional peer vs dev vite@5 — documented).
+- **Admin + staff email/password login WORKS** — proven by automated tests on real PostgreSQL
+  (`tests/integration/better-auth.test.ts` + `tests/integration/portal.test.ts`): signup disabled;
+  one-time bootstrap-gated admin init; admin creates staff; staff login → HttpOnly session; each staff
+  sees ONLY their shop; cross-shop denied; disable → session revoked + relogin blocked; password hashed.
+- Config: `src/platform/auth/better-auth.ts` (factory, pg Pool adapter, `admin()` plugin, signup off).
+  Mounted in `src/api/app.ts` at `/api/auth/{*any}` BEFORE `express.json`; portal routes in
+  `src/api/portal-routes.ts` (mounted BEFORE the 009 admin API router); authz in
+  `src/modules/portal/service.ts`. Server builds the instance in `src/api/server.ts` when
+  `BETTER_AUTH_SECRET` is set (its own migrator Pool). Tables: migration `10100_better_auth.cjs`
+  (user/session/account/verification — global, NOT under tenant RLS); binding: `10000_staff_identity.cjs`
+  (`shop_membership` + singleton `auth_bootstrap`).
+- **IMPORTANT:** the portal is OFF unless `BETTER_AUTH_SECRET` is set — and the current `.env` does NOT
+  have it (nor `EMAIL_SIGNING_KEY`, nor `LLM_MASTER_KEY`). Add them to run the portal/email/native-budget
+  live (see item 7). **Not verified:** the real-AI BROWSER smoke (`tasks.md` T054) — automated tests
+  only, no browser session was run.
+
+### Feature 006 email state (item 6)
+- Files: `src/modules/email/transport.ts` (`EmailTransport` port + `InMemoryEmailTransport` for tests +
+  `MailpitTransport` via **nodemailer 6.9.16** SMTP), `src/modules/email/tokens.ts` (HMAC reply tokens +
+  webhook signature verify), `src/modules/email/index.ts` (`EmailService`). Migration `7000_email.cjs`
+  (`email_outbox` one-per-request + `inbound_emails` Message-ID dedupe, forced RLS).
+- Outbound: worker enqueues the one clarification question when a request hits `awaiting_customer`, then
+  `EmailService.relayPending(transport)` on the reconciler tick; failed send → request `needs_review`
+  (`email_delivery_failed`); no email on file → `needs_review` (`no_reply_path`).
+- Inbound: signed webhook `POST /webhooks/email` (`src/api/email-webhook.ts`, HMAC over raw body;
+  mounted when `EMAIL_SIGNING_KEY` + `EMAIL_WEBHOOK_SECRET` set). Correlation by `reply+<token>@` +
+  Message-ID dedupe; strips quoted text; first reply wins (one round).
+- Queue handling: resumption inserts a `job_outbox` row → relay → pg-boss → pipeline re-runs; the
+  pipeline keys the reply call as `extract-reply` (distinct budget receipt).
+- **Mailpit:** docker-compose `mailpit` service (SMTP 1025, UI 127.0.0.1:8025), default profile.
+- Verified by `tests/integration/email.test.ts` (6 tests, in-memory transport + supertest webhook).
+- **Email is OFF with the current `.env`** (no `EMAIL_SIGNING_KEY`); the worker SMTP host defaults to
+  `mailpit` in compose.
+
+### Environment variables (item 7) — NAMES ONLY, values never shown
+- **In `.env` now:** DATABASE_URL, DATABASE_ADMIN_URL, DATABASE_MIGRATOR_URL, ADMIN_BOOTSTRAP_TOKEN,
+  PORT, LOG_LEVEL, MAX_PROCESSING_ATTEMPTS, QUEUE_EXPIRE_SECONDS, RECONCILER_INTERVAL_MS,
+  OPENAI_API_KEY, LITELLM_MASTER_KEY, LLM_BASE_URL, LLM_MODEL, LLM_API_KEY, BUDGET_AUTHORITY.
+- **MISSING from `.env` (needed to run the respective feature live; see `.env.example`):**
+  `BETTER_AUTH_SECRET` + `BETTER_AUTH_URL` (portal), `EMAIL_SIGNING_KEY` + `EMAIL_WEBHOOK_SECRET` +
+  `MAIL_*` (email), `LLM_MASTER_KEY` (native-budget provisioning — note `.env` has `LITELLM_MASTER_KEY`
+  but the worker reads `LLM_MASTER_KEY`), `WEB_FORM_SIGNING_KEY` (web form). All are optional/fail-closed.
+- `.env` is git-ignored and NOT tracked; `.env.example` documents every name with safe placeholders.
+
+### Test commands (item 8)
+`npm run typecheck` · `npm run lint` (dependency-cruiser) · `npx vitest run` (needs Docker) → 123/123.
+`make eval` (deterministic → docs/results.md) · `make eval-live` (gated real OpenAI). `make up` /
+`make provision`. Compose validate: `docker compose --profile llm config --services` → api db litellm
+mailpit worker.
+
+### Uncommitted changes (item 9)
+**None.** Working tree is clean; nothing to preserve or risk losing.
+
+### EXACT NEXT TASK (item 10)
+**Feature 010 T054 — the real-AI browser smoke** (the only un-done 010 item). Steps: add the MISSING
+env vars above to `.env` (`BETTER_AUTH_SECRET`, `EMAIL_SIGNING_KEY`/`EMAIL_WEBHOOK_SECRET`, `LLM_MASTER_KEY`,
+`WEB_FORM_SIGNING_KEY`); `docker compose --profile llm up` (real OpenAI); `POST /admin/init`; then drive
+`/admin/login` → create staff for Downtown + Northside → `/staff/login` → dashboard/orders → submit a
+real request via `/f/rb-downtown` → confirm it processes + the work order shows in the staff console →
+Mailpit clarification reply → verify Northside staff can't see Downtown data. **NOTE:** host
+`localhost:5432` currently resolves to a DIFFERENT Postgres than the compose db (port conflict) — resolve
+that (or remap the compose db port) before host-run commands against the live stack. Do NOT run paid
+budget-exhaustion tests; keep the aggregate cap < $15. Then minor polish: multi-shop selector UI,
+credential-replace UI (tasks.md T040/T021 remainder).
+
+<!-- ============================================================================================= -->
+
+## Historical handoff (pre-010; kept for provenance)
+
 **Execution stopped at a single-session size limit, not a blocker.** Slices 001–004 are implemented,
 tested, and committed (verified). 005–008 are not started. Nothing below is fabricated; "pending"
 means not built.

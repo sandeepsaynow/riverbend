@@ -97,3 +97,25 @@ session revoke + relogin blocked. Feature 009 shop API keys + Swagger unchanged.
 (auth, authz, shop-scoping, escaping/no-secrets, regression), typecheck + lint clean.
 **NOT run: the real-AI browser smoke (T054)** — flows verified by automated real-Postgres tests, not a
 browser session. See specs/010-staff-auth-portal/tasks.md.
+
+## CHECKPOINT 2026-11-04 — completed / incomplete / blocked
+
+**Completed + verified (123/123 tests, typecheck+lint clean, all committed):**
+- 001 foundation, 002 intake/queue, 003 AI pipeline (+ real OpenAI via LiteLLM proxy), 004 orders.
+- 005 web form, 006 email (Mailpit + inbound webhook + reply correlation), 007 resilience
+  (breaker/bulkhead/AI-paused).
+- 008 eval harness (deterministic docs/results.md + real docs/results-live.md) + Terraform (validated).
+- Correctness guards (m-1025/m-1009/m-1032) — real-eval defects fixed deterministically.
+- 009 API-key lifecycle (scopes/expiry/rotation/masked-list/audit) + OpenAPI/Swagger + `make provision`.
+- 010 staff auth portal: Better Auth installed+wired, admin/staff email-password login WORKS (tests),
+  shop-scoped console, disable→revoke, API keys preserved.
+
+**Incomplete:**
+- 010 T054 real-AI **browser** smoke (automated tests pass; no browser session run) — the exact next task.
+- 010 polish: multi-shop selector UI, credential-replace UI.
+- Minor: Better Auth on a dedicated restricted DB role (prod hardening); OTel/retention sweeper (007).
+
+**Blocked (external / env, not code):**
+- Live 40-message eval real-cost beyond the demo run (B1 — needs the standing OpenAI key + budget).
+- Live GCP deploy (B2 — IaC validated, no `apply`).
+- Host `localhost:5432` port conflict blocks host-run commands against the compose DB (remap or free 5432).
