@@ -15,6 +15,8 @@ export interface LiteLlmConfig {
   apiKey?: string | undefined;
   /** Per-call wall-clock budget (ms); the breaker/bulkhead around this lands in slice 007. */
   timeoutMs?: number | undefined;
+  /** Strict output-token ceiling per call (bounds cost + soft-cap overshoot). Default 1024. */
+  maxOutputTokens?: number | undefined;
 }
 
 /** Usage metrics for a single call — token counts only, never message content (VII, ids-only logging). */
@@ -120,6 +122,7 @@ export class LiteLlmGateway implements LlmGateway {
         body: JSON.stringify({
           model: this.config.model,
           temperature: 0,
+          max_tokens: this.config.maxOutputTokens ?? 1024,
           response_format: responseFormat(allowed),
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
