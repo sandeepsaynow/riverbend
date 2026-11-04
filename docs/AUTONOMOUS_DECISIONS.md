@@ -167,3 +167,15 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   migrator-pool identity reads.
 - **Scope held:** no new identity service, no custom password hashing, no architectural rewrite. Migration
   appended as `12000` (never precedes an applied migration). 16 new real-PG tests; 154/154 total.
+
+## 2026-11-04 — Feature 010 (D20.2): security re-audit of the bootstrap recovery (P0/P1)
+
+- **Did not trust my own D20.1 tests.** Re-audited and found: reconcile-by-email could adopt a pre-existing
+  account as platform-admin; the staff "orphan" heuristic could attach a membership to the platform admin;
+  the CSRF guard rejected 127.0.0.1 (host-only, no scheme). All three fixed.
+- **Ownership proof:** admin_user_id is only ever an id THIS bootstrap created and recorded; never an
+  email lookup. Ambiguity (email exists, not recorded) fails closed to operator recovery — never auto-adopt.
+  Staff duplicate fails closed. CSRF uses an exact scheme://host:port allowlist (dev adds the loopback sibling).
+- **Grounded:** verified live — 127.0.0.1 now allowed (401 not 403), foreign origin 403, completed-admin 409,
+  migrations 12000+12100 (+CHECK) apply. DB-role boundary (Better Auth on migrator role) documented as a prod
+  gap rather than shipping an unverified role migration near submission.

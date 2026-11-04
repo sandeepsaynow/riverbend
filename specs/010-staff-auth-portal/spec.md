@@ -82,3 +82,17 @@ admin). Amended requirements:
 - **FR-011a (staff atomicity):** verify the shop before creating an identity; on duplicate email reconcile
   only an orphan identity (no membership) — never attach a real account to a new shop; membership upsert is
   idempotent (`unique(user_id, shop_id)`).
+
+## Amendment (D20.2, 2026-11-04) — security re-audit (supersedes D20.1 reconcile-by-email)
+- **FR-010e (ownership proof):** bootstrap completes only with an `admin_user_id` that the bootstrap flow
+  itself created and recorded. An email-matched pre-existing account is **never** adopted; an existing-email
+  with no recorded id fails closed (`RecoveryRequired`) after a brief concurrent-winner wait. Enforced by a
+  DB CHECK (`status='completed' ⇒ admin_user_id IS NOT NULL`, migration 12100).
+- **FR-011b (staff never adopts):** `createStaff` never attaches a membership to a pre-existing account — a
+  duplicate email fails closed (`email already in use`); the platform admin (no membership) can never be
+  granted a shop membership this way. Shop verified before any identity is created.
+- **FR-012 (CSRF full-origin):** state-changing portal POSTs validate the full `scheme://host:port` Origin
+  (Referer fallback; missing allowed for same-origin forms) against an exact allowlist — prod = one HTTPS
+  origin; dev = that origin + its loopback sibling. Foreign/scheme/port/null are rejected; CSRF is never disabled.
+- **Prod gap (documented):** Better Auth runtime uses the migrator DB role; a dedicated restricted role is
+  the production recommendation.

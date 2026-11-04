@@ -246,3 +246,39 @@ Two cases need an explicit operator step (both operator-gated; no unauthenticate
 
 **Migration ordering note:** new migrations must be numbered AFTER all existing ones (the bootstrap fix is
 `12000_…`, after `11100_…`); node-pg-migrate refuses a migration that precedes an already-applied one.
+
+## Security update (D20.2) — ownership-proven bootstrap, fail-closed staff, full-origin CSRF
+
+**Supersedes D20.1's reconcile-by-email.** The bootstrap now records only an admin it created and **never
+adopts a pre-existing email-matched account**; `createStaff` likewise never adopts a pre-existing account.
+Two consequences for operators:
+
+- **A crash after the admin user is created but before it is recorded** now fails closed on retry
+  (`RecoveryRequired: an account with this email already exists but was not created by this bootstrap`)
+  rather than auto-adopting. Operator recovery (verify, then either adopt deliberately or remove the orphan):
+  ```bash
+  # Confirm the orphan is credential-less or the intended just-created admin, with NO prior session:
+  docker compose ... exec db psql -U riverbend_migrator -d riverbend -c \
+    "SELECT u.id, u.role,
+            (SELECT count(*) FROM \"account\" a WHERE a.\"userId\"=u.id AND a.\"providerId\"='credential') creds,
+            (SELECT count(*) FROM \"session\" s WHERE s.\"userId\"=u.id) sessions
+       FROM \"user\" u WHERE u.email='<admin email>';"
+  # Deliberate adoption ONLY if you are certain this user is the intended admin from the crashed bootstrap:
+  #   UPDATE auth_bootstrap SET admin_user_id='<that id>', status='completed', initialized_at=now() WHERE id=true;
+  # Otherwise remove the orphan (creds=0 AND sessions=0) and the pending marker, then re-init:
+  #   DELETE FROM "user" WHERE email='<admin email>'; DELETE FROM auth_bootstrap WHERE admin_user_id IS NULL;
+  ```
+- **A failed staff creation leaves a NON-privileged orphan** (user with no membership → no access). A retry
+  with the same email fails closed (`email already in use`); remove the orphan user (no membership, no
+  session) with operator SQL, then recreate.
+
+**CSRF / canonical origin (D20.2).** The portal validates the full `scheme://host:port` Origin (Referer
+fallback) against an exact allowlist derived from `BETTER_AUTH_URL`: production is a single strict HTTPS
+origin; development also allows the loopback sibling (`localhost` ⇄ `127.0.0.1`) at the same scheme+port. So
+browse the portal at the SAME origin as `BETTER_AUTH_URL` (default `http://localhost:8080`); `127.0.0.1:8080`
+also works in dev. A foreign origin, wrong scheme, wrong port, or `null` origin is rejected (403).
+
+**Database role boundary (production gap).** Better Auth's runtime connection currently uses the
+migrator/owner role. For production, provision a **dedicated restricted role** with privileges limited to
+`user`/`session`/`account`/`verification` (no DDL, no access to tenant tables) and point `BETTER_AUTH`'s pool
+at it. This is documented, not yet shipped (deferred near submission to avoid an unverified role migration).

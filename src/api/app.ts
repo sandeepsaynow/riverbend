@@ -23,7 +23,7 @@ import { WebService } from '../modules/web/index.js';
 import { registerWebRoutes } from './web-routes.js';
 import { registerDocsRoutes } from './docs-routes.js';
 import type { Pool } from 'pg';
-import { toNodeHandler, type Auth } from '../platform/auth/better-auth.js';
+import { toNodeHandler, trustedOriginsFor, type Auth } from '../platform/auth/better-auth.js';
 import { AuthPortalService } from '../modules/portal/service.js';
 import { registerPortalRoutes } from './portal-routes.js';
 import { EmailService } from '../modules/email/index.js';
@@ -81,8 +81,6 @@ export function createApp(deps: AppDeps): Express {
   // API router so its browser pages (/admin/login, /admin, /admin/staff, /admin/init, /staff/*) take
   // precedence; any unmatched /admin/* (e.g. the 009 JSON API POST /admin/shops) falls through below.
   if (deps.betterAuth && deps.authPool) {
-    let host = 'localhost:8080';
-    try { host = new URL(deps.config.BETTER_AUTH_URL).host; } catch { /* default */ }
     registerPortalRoutes(app, {
       auth: deps.betterAuth,
       portal: new AuthPortalService(deps.db, deps.betterAuth, deps.authPool),
@@ -90,7 +88,7 @@ export function createApp(deps: AppDeps): Express {
       shops: deps.shops,
       db: deps.db,
       bootstrapToken: deps.config.ADMIN_BOOTSTRAP_TOKEN,
-      baseUrlHost: host,
+      trustedOrigins: trustedOriginsFor(deps.config.BETTER_AUTH_URL, deps.config.NODE_ENV === 'production'),
     });
   }
 

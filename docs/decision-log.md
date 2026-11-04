@@ -130,3 +130,12 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   Staff creation made retry-safe (shop-first; reconcile only orphan identities; idempotent membership upsert).
   Migration `12000_bootstrap_state.cjs` (appended after 11100 — new migrations never precede applied ones).
   Rationale in ARCHITECTURE_DECISIONS D20.1; 11 real-PG fault-injection tests in tests/integration/bootstrap-recovery.test.ts.
+
+## 2026-11-04 — Feature 010 (D20.2): ownership-proven bootstrap, full-origin CSRF, fail-closed staff (P0/P1)
+
+- **Supersedes D20.1's reconcile-by-email** (an unauthorized-adoption vector). Bootstrap now records only a
+  user it created and never adopts an email-matched account (fail-closed → operator recovery); DB CHECK
+  (12100) enforces completion ⟺ admin_user_id present. `createStaff` never adopts a pre-existing account
+  (duplicate → closed). CSRF validated against an exact scheme://host:port allowlist (fixes the 127.0.0.1
+  vs localhost rejection without weakening checks). DB-role boundary documented as a production gap.
+  Rationale in ARCHITECTURE_DECISIONS D20.2; 24 real-PG tests (14 bootstrap/staff + 10 CSRF). 167/167.

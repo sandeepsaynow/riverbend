@@ -14,7 +14,7 @@ import { CloudflareTurnstileVerifier, FakeTurnstileVerifier } from '../modules/w
 import { EmailService } from '../modules/email/index.js';
 import { SvixVerifier } from '../modules/email/resend-webhook.js';
 import pg from 'pg';
-import { createAuth } from '../platform/auth/better-auth.js';
+import { createAuth, trustedOriginsFor } from '../platform/auth/better-auth.js';
 import { createApp } from './app.js';
 
 const CATALOG_PATH = process.env.CATALOG_PATH ?? resolve(process.cwd(), 'catalog/catalog.json');
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
         pool: authPool,
         secret: config.BETTER_AUTH_SECRET!,
         baseURL: config.BETTER_AUTH_URL,
-        trustedOrigins: [config.BETTER_AUTH_URL],
+        trustedOrigins: trustedOriginsFor(config.BETTER_AUTH_URL, config.NODE_ENV === 'production'),
         secureCookies: config.NODE_ENV === 'production',
       })
     : undefined;

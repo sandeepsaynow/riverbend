@@ -142,7 +142,12 @@ These edge cases are introduced by our design, not the brief's dataset:
 | Money | m-1029 = USD 150; m-1035 qty 2; m-1037 rear only; a catalog change leaves old orders alone; 20 parallel reservations vs a cap of 5 → exactly 5 succeed. | Wrong money is the error customers notice at once. |
 | Reliability | AI timeouts/503s retry then park; redelivered jobs don't double-process; a crash after the AI call causes no second charge; a failed email retries and never rolls back an order. | Failures are normal at any scale; the brief asks about them directly. |
 
-## Auth bootstrap + staff creation (D20.1) + reply-token (D21.2)
+## Auth bootstrap + staff creation (D20.1 → **D20.2 supersedes reconcile-by-email**) + reply-token (D21.2)
+> **D20.2 update:** bootstrap/staff NEVER adopt an email-matched pre-existing account. Bootstrap records
+> only a user it created; an existing-email-but-unrecorded case fails closed to operator recovery (not
+> auto-adopted). Staff duplicate → fail closed (the platform admin can never be granted a shop membership).
+> CSRF validates the full `scheme://host:port` origin against an exact allowlist (dev adds the loopback
+> sibling, fixing the 127.0.0.1-vs-localhost rejection). The bullets below describe the earlier D20.1 shape.
 - **Bootstrap crash between steps:** Better Auth user/account and the `auth_bootstrap` marker are separate
   transactions. A crash leaves a PENDING marker (`admin_user_id NULL`); a retry reconciles (creates or, if
   the user already exists with a credential, completes) — never a permanent lockout, never a second admin.

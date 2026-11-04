@@ -199,3 +199,17 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
   auth gate redirects/401s as expected. Full fresh-init/login/staff/isolation/recovery is proven by the
   automated fault-injection suite (the shared live test db already had a completed admin; not reset per the
   no-destructive-cleanup rule). AI/Resend live paths unchanged since the prior turn.
+
+## CHECKPOINT 2026-11-04 (D20.2) — security re-audit of bootstrap recovery (P0/P1 fixes)
+
+- **P0 unauthorized-adoption fixed:** bootstrap records only a user it created (never adopts an email-matched
+  account); duplicate/ambiguous → fail-closed RecoveryRequired. Staff creation never adopts a pre-existing
+  account (duplicate → closed; shop verified first; orphan stays non-privileged). DB CHECK
+  (12100_bootstrap_consistency.cjs) enforces completion ⟺ admin_user_id present.
+- **P1 CSRF fixed:** exact scheme://host:port allowlist (trustedOriginsFor) shared by Better Auth + portal;
+  127.0.0.1-vs-localhost rejection resolved without disabling CSRF; foreign/scheme/port/null blocked.
+- **Tests:** +13 real-PG (bootstrap/staff ownership + 10 CSRF). Full suite **167/167**; typecheck+lint clean;
+  compose (default+overlay) + terraform validate ok. Live: migrations 12000+12100 apply, CSRF 127.0.0.1→401
+  / foreign→403, completed-admin→409.
+- **Documented prod gap:** Better Auth runtime uses the migrator role; a dedicated restricted role is the
+  production recommendation (not shipped unverified near submission).

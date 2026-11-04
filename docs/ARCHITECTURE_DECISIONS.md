@@ -472,3 +472,31 @@ session** (verified), so recovery never depends on them; identity reads use Bett
 on duplicate email reconcile **only** an orphan identity (no membership) — never silently attach a real
 account to a new shop; membership upsert is idempotent (`unique(user_id, shop_id)`). **Door:** two-way
 (a new reviewed migration `12000_bootstrap_state.cjs`; identity records are kept). See `specs/010-staff-auth-portal/`.
+
+## D20.2 — Ownership-proven bootstrap + full-origin CSRF + fail-closed staff (supersedes D20.1 reconcile-by-email)
+
+A security re-audit of D20.1 found three real defects (confirmed by fault injection, not tests-pass optimism):
+
+1. **Unauthorized account adoption (P0).** D20.1 reconciled a pending bootstrap to a user *found by email*.
+   An email-matched **pre-existing** account could thus be granted platform-admin. **Fixed:** the bootstrap
+   now only ever records an `admin_user_id` that **this flow created** (`createUser` → record immediately →
+   complete). A `USER_ALREADY_EXISTS` with no recorded id is **never adopted** — it waits briefly for a
+   concurrent winner's recorded id, else fails closed (`RecoveryRequired`, operator step). Completion ⟺
+   `admin_user_id IS NOT NULL`, now also enforced by a DB CHECK (`12100_bootstrap_consistency.cjs`). This
+   trades auto-recovery of the rare crash-after-create window for a safe operator step — the audit's mandate.
+2. **Staff adoption (P0).** D20.1's "no membership ⇒ orphan ⇒ adopt" even matched the platform admin (who
+   has no membership). **Fixed:** `createStaff` **never** adopts a pre-existing email — a duplicate fails
+   closed (`email already in use`). The shop is verified before any identity is created; a crash leaves a
+   NON-privileged orphan (no membership → no access) for operator cleanup.
+3. **CSRF host-only check (P1).** The origin guard compared `host` against one `baseUrlHost`, so a legit
+   `127.0.0.1` browser was rejected while `localhost` was configured, and scheme wasn't validated. **Fixed:**
+   `trustedOriginsFor()` builds an exact `scheme://host:port` allowlist (prod = one strict HTTPS origin; dev
+   also allows the loopback sibling), shared by Better Auth and the portal guard; the guard matches the full
+   normalized Origin (and Referer fallback), blocking foreign origin / wrong scheme / wrong port / null, and
+   allowing a missing Origin (same-origin form, backed by SameSite cookies). Never fixed by disabling CSRF.
+
+**DB role boundary (documented gap, not an unverified migration):** Better Auth's runtime Pool currently uses
+the **migrator/owner** role. Production should use a **dedicated restricted role** with privileges only on
+`user`/`session`/`account`/`verification` (no DDL, no access to tenant tables). Introducing that role near
+submission is deferred and documented rather than shipped unverified. **Door:** two-way; identity records kept.
+See `specs/010-staff-auth-portal/` and `docs/FINAL_MANUAL_TEST.md`.

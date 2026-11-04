@@ -38,3 +38,36 @@ export function createAuth(deps: AuthDeps) {
 
 export type Auth = ReturnType<typeof createAuth>;
 export { toNodeHandler, fromNodeHeaders };
+
+/**
+ * The exact set of trusted origins (scheme://host:port) for CSRF/Origin validation (D20.2). Production is a
+ * strict single-origin HTTPS allowlist (just BETTER_AUTH_URL). In non-production we ALSO allow the sibling
+ * loopback host at the same scheme+port (localhost ⇄ 127.0.0.1) so a local browser works from either, without
+ * weakening validation — every entry is a full, exact origin. Used by both Better Auth and the portal guard.
+ */
+export function trustedOriginsFor(baseUrl: string, isProduction: boolean): string[] {
+  const out = new Set<string>();
+  try {
+    const u = new URL(baseUrl);
+    const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+    out.add(`${u.protocol}//${u.hostname}:${port}`);
+    if (!isProduction) {
+      const sibling = u.hostname === 'localhost' ? '127.0.0.1' : u.hostname === '127.0.0.1' ? 'localhost' : null;
+      if (sibling) out.add(`${u.protocol}//${sibling}:${port}`);
+    }
+  } catch {
+    /* invalid base URL → empty allowlist (fail closed) */
+  }
+  return [...out];
+}
+
+/** Normalize an Origin/Referer header to scheme://host:port for exact comparison; null if unparseable. */
+export function normalizeOrigin(value: string): string | null {
+  try {
+    const u = new URL(value);
+    const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+    return `${u.protocol}//${u.hostname}:${port}`;
+  } catch {
+    return null;
+  }
+}

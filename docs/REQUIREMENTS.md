@@ -156,3 +156,5 @@ These require a human decision; see the dedicated section at the end of
 2. **"Synthetic / throwaway" framing.** Brief: "We will not use your work… nothing goes into our codebase." Guide Promise 3 **withdraws** the synthetic-data framing and designs for real customers/data/money. Deliberate, but a philosophical divergence from the brief's framing.
 3. **Spec Kit integration.** Guide Appendix B instructs `--integration copilot`; this project was initialized with `--integration claude` per the engagement. Already decided (Claude), flagged here so it is not silent.
 4. **Dataset shape.** Brief says "40 sample messages, 8 deliberately tricky"; the guide observes only **39 distinct IDs** (m-1003 delivered twice at rows 3 and 14; no m-1014) and treats **more than 8** messages as tricky. A dataset ambiguity to confirm.
+
+| P2 | **Portal CSRF canonical-origin policy** (D20.2): state-changing POSTs validate the full scheme://host:port Origin against an exact allowlist (prod = one HTTPS origin; dev adds the loopback sibling). | D20.2 |

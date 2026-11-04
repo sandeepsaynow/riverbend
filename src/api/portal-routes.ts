@@ -1,5 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { fromNodeHeaders, type Auth } from '../platform/auth/better-auth.js';
+import { fromNodeHeaders, normalizeOrigin, type Auth } from '../platform/auth/better-auth.js';
 import { AuthPortalService, AlreadyInitialized, RecoveryRequired } from '../modules/portal/service.js';
 import type { OrdersService } from '../modules/orders/index.js';
 import type { ShopsService } from '../modules/shops/index.js';
@@ -27,7 +27,7 @@ interface PortalDeps {
   shops: ShopsService;
   db: Db;
   bootstrapToken: string;
-  baseUrlHost: string; // for Origin checks on state-changing POSTs
+  trustedOrigins: string[]; // exact scheme://host:port allowlist for Origin/Referer checks (D20.2)
 }
 
 /** Mounted in the composition layer (after express.json). Session-guarded server-rendered portal (010). */
@@ -38,10 +38,16 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
   const getSession = (req: Request) => deps.auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
 
   // CSRF/Origin guard for our OWN state-changing HTML POSTs (Better Auth guards its own /api/auth routes).
+  // Validates the FULL origin (scheme + host + port) against the exact allowlist (D20.2). A present Origin
+  // must match exactly; when Origin is absent we fall back to Referer; with neither header (common for a
+  // same-origin form post, and backed by SameSite cookies) we allow. An unparseable/foreign value is refused.
+  const allow = new Set(deps.trustedOrigins);
   const sameOrigin = (req: Request): boolean => {
     const origin = req.get('origin');
-    if (!origin) return true; // same-origin form posts often omit Origin
-    try { return new URL(origin).host === deps.baseUrlHost; } catch { return false; }
+    if (origin) { const n = normalizeOrigin(origin); return n !== null && allow.has(n); }
+    const referer = req.get('referer');
+    if (referer) { const n = normalizeOrigin(referer); return n !== null && allow.has(n); }
+    return true; // no Origin/Referer → same-origin form post (SameSite cookies are the backstop)
   };
   const csrf = (req: Request, res: Response, next: NextFunction): void => {
     if (!sameOrigin(req)) { res.status(403).type('html').send(page('Blocked', '<h1>Request blocked</h1>')); return; }

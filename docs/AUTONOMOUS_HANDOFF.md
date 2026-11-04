@@ -229,3 +229,9 @@ address) + arbitrary-recipient delivery (needs a verified sending domain; from i
 two-phase marker (admin_email+status; completion ⟺ admin_user_id NOT NULL), reconcile-by-email, no lockout,
 no duplicate admin, credential-less orphan → RecoveryRequired (operator step). Staff creation retry-safe.
 Migration 12000_bootstrap_state.cjs. +16 real-PG tests → 154/154. Operator recovery in FINAL_MANUAL_TEST.md.
+
+**SECURITY RE-AUDIT (2026-11-04, D20.2, supersedes D20.1 reconcile-by-email):** bootstrap now ownership-
+proven (records only a user it created; never adopts an email-matched account → fail-closed RecoveryRequired);
+staff creation never adopts a pre-existing account; CSRF validates an exact scheme://host:port allowlist
+(127.0.0.1 dev bug fixed). Migrations 12000+12100 (CHECK). +13 tests → 167/167. Better Auth still on the
+migrator DB role (documented prod gap: use a restricted role). Operator recovery in FINAL_MANUAL_TEST.md.

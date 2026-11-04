@@ -44,55 +44,66 @@ export class AuthPortalService {
    */
   async initFirstAdmin(input: { email: string; password: string; name: string }): Promise<{ userId: string }> {
     const email = input.email;
-    // 1. Reserve or read the singleton marker (bound to the admin email).
+    // 1. Reserve or read the singleton marker (bound to the admin email; id=true PK serializes concurrency).
     const ins = await this.db.adminQuery<MarkerRow>(
       `INSERT INTO auth_bootstrap (id, admin_email, status) VALUES (true, $1, 'pending')
        ON CONFLICT (id) DO NOTHING
        RETURNING admin_user_id, admin_email, status`,
       [email],
     );
-    let marker = ins.rows[0];
-    if (!marker) {
-      const cur = await this.db.adminQuery<MarkerRow>(`SELECT admin_user_id, admin_email, status FROM auth_bootstrap WHERE id = true`);
-      marker = cur.rows[0]!;
+    let marker = ins.rows[0] ?? (await this.db.adminQuery<MarkerRow>(`SELECT admin_user_id, admin_email, status FROM auth_bootstrap WHERE id = true`)).rows[0]!;
+
+    // 2. An admin id is ALREADY RECORDED ⇒ ownership is decided (the id was recorded by step 4 of this or a
+    //    prior attempt, i.e. a user THIS bootstrap created — never an email-matched account). Finalize or reject.
+    if (marker.admin_user_id) {
+      if (marker.status === 'completed') throw new AlreadyInitialized('admin already initialized');
+      // Recorded but not finalized (crash between record and completion): verify + finalize idempotently.
+      if (!(await this.hasCredential(marker.admin_user_id))) {
+        throw new RecoveryRequired('the recorded admin has no password credential — run operator recovery then re-initialize');
+      }
+      await this.db.adminQuery(`UPDATE auth_bootstrap SET status = 'completed', initialized_at = now() WHERE id = true`);
+      return { userId: marker.admin_user_id };
     }
-    // 2. Truly completed (a usable admin was recorded) → single-use gate holds.
-    if (marker.admin_user_id) throw new AlreadyInitialized('admin already initialized');
-    // Pending/incomplete: bind the retry to the original email (prevents a second, different admin).
+
+    // 3. No admin recorded yet. Bind the init to one email (a different-email retry is refused → no 2nd admin).
     if (marker.admin_email && marker.admin_email !== email) {
       throw new RecoveryRequired('initialization is pending for a different admin email — retry with that email, or run operator recovery');
     }
     if (!marker.admin_email) {
-      await this.db.adminQuery(`UPDATE auth_bootstrap SET admin_email = $1 WHERE id = true`, [email]); // adopt (legacy/stuck marker)
+      await this.db.adminQuery(`UPDATE auth_bootstrap SET admin_email = $1 WHERE id = true`, [email]); // adopt a legacy/stuck marker's email
     }
-    // 3. Create the admin, or reconcile a prior partial attempt (idempotent by email).
+
+    // 4. Create the admin and IMMEDIATELY record its id. OWNERSHIP PROOF: admin_user_id is only ever set to a
+    //    user WE just created here — we NEVER adopt a pre-existing email-matched account (that is the attack the
+    //    audit forbids). If the email already exists but no attempt recorded it, we fail closed to operator recovery.
     let userId: string;
     try {
       const created = await this.auth.api.createUser({ body: { email, password: input.password, name: input.name, role: 'admin' } });
       userId = (created as { user: { id: string } }).user.id;
     } catch (err) {
       if (!isUserExists(err)) throw err; // genuine failure → marker stays PENDING (retryable), not a lockout
-      const existing = await this.findUserIdByEmail(email); // a prior (or concurrent) attempt created the user
-      if (!existing) throw err;
-      // A concurrent attempt may be mid-flight (its user row is visible before its credential/marker commit).
-      // Wait briefly for it to either complete the marker or finish the credential — this disambiguates a
-      // transient race from a *persistent* credential-less orphan without ever falsely marking complete.
-      let hasCred = await this.hasCredential(existing);
-      for (let i = 0; i < 20 && !hasCred; i++) {
-        const m = await this.db.adminQuery<MarkerRow>(`SELECT admin_user_id, admin_email, status FROM auth_bootstrap WHERE id = true`);
-        if (m.rows[0]?.admin_user_id) throw new AlreadyInitialized('admin already initialized'); // the concurrent winner finished
+      // A user with this email exists but no bootstrap attempt recorded it. It may be a CONCURRENT winner
+      // mid-record — wait briefly for admin_user_id to appear. Otherwise it is a pre-existing/orphaned account
+      // we must NOT adopt by email → fail closed (controlled operator recovery), never granting it admin.
+      for (let i = 0; i < 20; i++) {
         await delay(100);
-        hasCred = await this.hasCredential(existing);
+        const m = await this.db.adminQuery<MarkerRow>(`SELECT admin_user_id, status FROM auth_bootstrap WHERE id = true`);
+        if (m.rows[0]?.admin_user_id) {
+          if (m.rows[0].status !== 'completed') await this.db.adminQuery(`UPDATE auth_bootstrap SET status = 'completed', initialized_at = now() WHERE id = true`);
+          return { userId: m.rows[0].admin_user_id }; // the concurrent winner created + recorded the admin
+        }
       }
-      if (!hasCred) {
-        // Pathological, persistent: a user exists with no password credential (cannot be fixed headerless —
-        // setUserPassword is UNAUTHORIZED without an admin session). Flag for operator recovery; do NOT complete.
-        throw new RecoveryRequired('an incomplete admin account exists without a password credential — run operator recovery (docs/FINAL_MANUAL_TEST.md) then re-initialize');
-      }
-      userId = existing; // the prior attempt produced a usable admin; just finish recording it
+      throw new RecoveryRequired('an account with this email already exists but was not created by this bootstrap — it will NOT be auto-adopted; run operator recovery (docs/FINAL_MANUAL_TEST.md)');
     }
-    await this.db.adminQuery(`UPDATE auth_bootstrap SET admin_user_id = $1, status = 'completed', initialized_at = now() WHERE id = true`, [userId]);
-    return { userId };
+    // Record ownership (guarded: only if still unrecorded). If a concurrent attempt recorded first, defer to it.
+    const rec = await this.db.adminQuery<{ admin_user_id: string }>(
+      `UPDATE auth_bootstrap SET admin_user_id = $1 WHERE id = true AND admin_user_id IS NULL RETURNING admin_user_id`,
+      [userId],
+    );
+    const finalId = rec.rows[0]?.admin_user_id
+      ?? (await this.db.adminQuery<{ admin_user_id: string }>(`SELECT admin_user_id FROM auth_bootstrap WHERE id = true`)).rows[0]!.admin_user_id;
+    await this.db.adminQuery(`UPDATE auth_bootstrap SET status = 'completed', initialized_at = now() WHERE id = true`);
+    return { userId: finalId };
   }
 
   /** Initialized ⟺ a usable admin was recorded. A pending/failed marker is NOT "initialized". */
@@ -103,9 +114,10 @@ export class AuthPortalService {
 
   /**
    * Admin-created staff (allow-listed fields only): create the Better Auth user, then the shop membership.
-   * Retry-safe: the shop is verified first (no orphan identity on a bad shop); a duplicate email is only
-   * reconciled when it belongs to an **orphan** identity (no membership anywhere) — a real existing account
-   * is never silently attached to a new shop. The membership upsert is idempotent (unique(user,shop)).
+   * SECURITY: a duplicate email is **never** adopted — we never attach a shop membership to a pre-existing
+   * account just because the email matches (that could grant a shop to the platform admin or any human), so
+   * a duplicate fails closed ("email already in use"). The shop is verified first (no orphan identity on a bad
+   * shop). A crash after createUser leaves a NON-privileged orphan (no membership → no access); operator cleanup.
    */
   async createStaff(input: { email: string; name: string; password: string; shopId: string; role: AppRole }): Promise<{ userId: string }> {
     if (input.role !== 'SHOP_ADMIN' && input.role !== 'SHOP_STAFF') throw new PortalError('invalid role');
@@ -116,27 +128,17 @@ export class AuthPortalService {
       const created = await this.auth.api.createUser({ body: { email: input.email, password: input.password, name: input.name, role: 'user' } });
       userId = (created as { user: { id: string } }).user.id;
     } catch (err) {
-      if (!isUserExists(err)) throw err;
-      const existing = await this.findUserIdByEmail(input.email);
-      if (!existing) throw err;
-      const any = await this.db.adminQuery<{ n: string }>(`SELECT count(*)::text AS n FROM shop_membership WHERE user_id = $1`, [existing]);
-      if (Number(any.rows[0]!.n) > 0) throw new PortalError('email already in use'); // real account — do not touch
-      userId = existing; // orphan identity from a failed prior creation → safe to complete
+      if (isUserExists(err)) throw new PortalError('email already in use'); // NEVER adopt a pre-existing account
+      throw err;
     }
     await this.db.withTenant(input.shopId, (c) =>
       c.query(
         `INSERT INTO shop_membership (user_id, shop_id, role, status) VALUES ($1, $2, $3, 'active')
-         ON CONFLICT (user_id, shop_id) DO UPDATE SET role = EXCLUDED.role, status = 'active'`,
+         ON CONFLICT (user_id, shop_id) DO NOTHING`,
         [userId, input.shopId, input.role],
       ),
     );
     return { userId };
-  }
-
-  /** Look up a Better Auth user id by email (migrator pool; identity path, read-only, no PII logged). */
-  private async findUserIdByEmail(email: string): Promise<string | null> {
-    const r = await this.authPool.query<{ id: string }>(`SELECT id FROM "user" WHERE email = $1 LIMIT 1`, [email]);
-    return r.rows[0]?.id ?? null;
   }
 
   /** Whether a user has a usable password credential (migrator pool, read-only). */

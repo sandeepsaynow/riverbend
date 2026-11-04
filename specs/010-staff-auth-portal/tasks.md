@@ -81,3 +81,12 @@ Status key: [x] done+verified · [~] scaffolded/not fully verified · [ ] not st
 - [x] T073 Thread Better Auth's migrator Pool into `AuthPortalService` for identity reads; map `RecoveryRequired` → 409.
 - [x] T074 11 real-PG fault-injection tests (crash/partial/concurrent/completed/different-email/orphan +
       staff bad-shop/orphan/duplicate/concurrent) in tests/integration/bootstrap-recovery.test.ts. 154/154.
+
+## Phase 8 — Security re-audit (D20.2, P0/P1)
+- [x] T080 Ownership-proven bootstrap (record-only-what-we-created; never adopt by email; fail-closed recovery).
+- [x] T081 `createStaff` never adopts a pre-existing account (duplicate → closed; shop verified first).
+- [x] T082 Full-origin CSRF allowlist (trustedOriginsFor + normalizeOrigin); fixes 127.0.0.1-vs-localhost.
+- [x] T083 DB CHECK migration `12100_bootstrap_consistency.cjs` (completion ⟺ admin_user_id present).
+- [x] T084 Tests: 14 bootstrap/staff fault-injection (incl. unauthorized-adoption refused, admin-not-granted)
+      + 10 CSRF/origin (valid/127.0.0.1/foreign/scheme/port/missing/null/referer). 167/167.
+- [ ] T085 (prod, deferred) dedicated restricted DB role for Better Auth runtime — documented gap, not shipped.
