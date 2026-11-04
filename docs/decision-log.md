@@ -73,3 +73,11 @@ mock upstream + configured pricing (no paid OpenAI calls):
 4. **Restricted virtual keys** used for inference; the master key is confined to provisioning.
 Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — mapped to
 `BudgetExceededError`. Hermetic tests (92 passing) cover the Riverbend-side logic; this is the live proof.
+
+## 2026-11-04 — Feature 010: Better Auth for human auth; Spec Kit reconciliation
+
+- Adopt **Better Auth 1.7.16 (MIT)** for email/password + sessions (admin()/pg adapter); Riverbend owns
+  authorization via `shop_membership` → forced RLS. Shop API keys (009) + LiteLLM virtual keys unchanged.
+  Full rationale in ARCHITECTURE_DECISIONS D20; design in specs/010-staff-auth-portal/.
+- **Spec Kit reconciliation:** reconstructed the missing `specs/008-eval-deploy/spec.md` from the actual
+  implemented eval + Terraform (no invented results). Created specs/010 spec/plan/tasks.
