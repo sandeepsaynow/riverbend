@@ -7,6 +7,7 @@ import { BudgetService } from '../../src/modules/budget/index.js';
 import { PipelineService } from '../../src/modules/pipeline/index.js';
 import { FakeGateway } from '../../src/platform/llm/fake-gateway.js';
 import { BudgetExceededError, type ExtractionInput, type LlmGateway } from '../../src/platform/llm/index.js';
+import { ResilientGateway } from '../../src/platform/llm/resilient-gateway.js';
 
 const TUNE_FORM = { kind: 'repair', bikes: [{ bikeNumber: 1, issues: ['tune'], serviceCodes: ['TUNE_BASIC'] }], urgency: 'normal', dateWords: null, questionDraft: null };
 
@@ -173,5 +174,17 @@ describe('budget migration (1.2.0): real-cost capture + fail-closed proxy reject
     expect(Number(calls.rows[0]!.cost_micros)).toBe(0);
     const usage = await budget.usage(shop, PERIOD);
     expect(usage!.spentMicros).toBe(0); // fail-closed: nothing charged
+  });
+
+  it('007: the AI-paused switch parks held_budget with no model call', async () => {
+    const shop = await createShop('rb-paused');
+    await budget.ensureBudget(shop, PERIOD, 1_000_000);
+    const paused = new ResilientGateway(new FakeGateway(), { failureThreshold: 5, cooldownMs: 1000, maxConcurrentPerShop: 4, isPaused: () => true });
+    const pipe = new PipelineService(t.db, paused, { defaultBudgetMicros: 1_000_000, estimateMicros: 2_000, period: PERIOD });
+    const sub = await intake.submit({ shopId: shop, source: 'api', submissionId: 'ap-1', content: 'tune please' });
+    await pipe.run({ requestId: sub.requestId, shopId: shop });
+    expect(await state(sub.requestId)).toBe('held_budget');
+    const usage = await budget.usage(shop, PERIOD);
+    expect(usage!.spentMicros).toBe(0); // paused: nothing charged
   });
 });

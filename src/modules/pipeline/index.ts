@@ -1,5 +1,5 @@
 import type { Db } from '../../platform/db/index.js';
-import { BudgetExceededError, type LlmGateway } from '../../platform/llm/index.js';
+import { AiPausedError, BudgetExceededError, type LlmGateway } from '../../platform/llm/index.js';
 import { BudgetService } from '../budget/index.js';
 import { decide } from './decide.js';
 import { ExtractionInvalid, validateExtraction, type Extraction } from './schema.js';
@@ -97,15 +97,16 @@ export class PipelineService {
       }
       let raw: unknown;
       try {
-        raw = await this.gateway.extract({ content, allowedServiceCodes });
+        raw = await this.gateway.extract({ content, allowedServiceCodes, shopId });
       } catch (err) {
         if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, 0);
-        if (err instanceof BudgetExceededError) {
-          // The budget authority denied admission before the provider (I4, fail-closed). Park, no retry.
+        if (err instanceof BudgetExceededError || err instanceof AiPausedError) {
+          // Budget authority denied admission (I4), or the AI-paused switch is on (007): honest no-AI
+          // hold, no retry. Staff see held_budget; it resumes when the cap/switch clears.
           await this.setState(shopId, requestId, 'held_budget');
           return;
         }
-        throw err; // other failures → let pg-boss retry (outage handling is slice 007)
+        throw err; // transient (timeout / circuit-open / bulkhead) → let pg-boss retry, then DLQ → needs_review
       }
       // Settle at the proxy-calculated real cost when available (FR-007), else the estimate.
       const costMicros = this.gateway.lastCostMicros ?? this.opts.estimateMicros;

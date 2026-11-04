@@ -5,6 +5,7 @@ import { INTAKE_DLQ, INTAKE_QUEUE, PIPELINE_DLQ, PIPELINE_QUEUE } from '../platf
 import { PgBossQueue } from '../platform/queue/pgboss-adapter.js';
 import { FakeGateway } from '../platform/llm/fake-gateway.js';
 import { LiteLlmGateway } from '../platform/llm/litellm-gateway.js';
+import { ResilientGateway } from '../platform/llm/resilient-gateway.js';
 import type { LlmGateway } from '../platform/llm/index.js';
 import { PipelineService } from '../modules/pipeline/index.js';
 import { OrdersService } from '../modules/orders/index.js';
@@ -24,14 +25,22 @@ async function main(): Promise<void> {
   const logger = createLogger(config.LOG_LEVEL);
   const db = new Db({ appUrl: config.DATABASE_URL, adminUrl: config.DATABASE_ADMIN_URL });
 
-  const gateway: LlmGateway =
+  const baseGateway: LlmGateway =
     config.LLM_BASE_URL && config.LLM_MODEL
       ? new LiteLlmGateway(
           { baseUrl: config.LLM_BASE_URL, model: config.LLM_MODEL, apiKey: config.LLM_API_KEY, timeoutMs: config.LLM_TIMEOUT_MS },
           logger,
         )
       : new FakeGateway();
-  logger.info({ gateway: gateway.name }, 'ai gateway selected');
+  // Wrap with resilience (007): AI-paused switch + circuit breaker + per-shop bulkhead, over the
+  // delegate's own per-call timeout. pg-boss stays the sole retry authority.
+  const gateway: LlmGateway = new ResilientGateway(baseGateway, {
+    failureThreshold: config.AI_CIRCUIT_FAILURE_THRESHOLD,
+    cooldownMs: config.AI_CIRCUIT_COOLDOWN_MS,
+    maxConcurrentPerShop: config.AI_MAX_CONCURRENCY_PER_SHOP,
+    isPaused: () => config.AI_PAUSED,
+  });
+  logger.info({ gateway: baseGateway.name, paused: config.AI_PAUSED }, 'ai gateway selected (resilience wrapped)');
 
   const orders = new OrdersService(db);
   const pipeline = new PipelineService(db, gateway, {

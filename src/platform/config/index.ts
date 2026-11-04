@@ -54,6 +54,13 @@ const ConfigSchema = z.object({
   MAIL_SMTP_PORT: z.coerce.number().int().positive().default(1025),
   MAIL_FROM: z.string().default('Riverbend Cycles <no-reply@riverbend.example>'),
   MAIL_REPLY_DOMAIN: z.string().default('reply.riverbend.example'),
+  // Slice 007 resilience (D13/D15/D16). The global "AI paused" switch → requests park held_budget.
+  AI_PAUSED: z.string().default('false').transform((v) => v.toLowerCase() === 'true' || v === '1'),
+  // Circuit breaker around the model call: open after N consecutive failures for a cooldown.
+  AI_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(5),
+  AI_CIRCUIT_COOLDOWN_MS: z.coerce.number().int().positive().default(30_000),
+  // Per-shop bulkhead: max concurrent in-flight model calls for one shop.
+  AI_MAX_CONCURRENCY_PER_SHOP: z.coerce.number().int().positive().default(4),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

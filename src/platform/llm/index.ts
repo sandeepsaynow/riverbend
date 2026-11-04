@@ -13,6 +13,8 @@ export interface ExtractionInput {
    * returned code against the live catalog (I3), so the model can never widen the set.
    */
   allowedServiceCodes?: readonly string[];
+  /** Owning shop id — used by the resilience wrapper for a per-shop bulkhead (007). Never sent to the model. */
+  shopId?: string;
 }
 
 export interface LlmGateway {
@@ -36,5 +38,29 @@ export class BudgetExceededError extends Error {
   constructor(message = 'budget exceeded at the proxy') {
     super(message);
     this.name = 'BudgetExceededError';
+  }
+}
+
+/** The global "AI paused" switch is on (D13/007). The pipeline parks `held_budget` (honest no-AI hold). */
+export class AiPausedError extends Error {
+  constructor(message = 'AI processing is paused') {
+    super(message);
+    this.name = 'AiPausedError';
+  }
+}
+
+/** The circuit breaker is open after repeated failures (007). Transient → the caller lets pg-boss retry. */
+export class CircuitOpenError extends Error {
+  constructor(message = 'AI circuit breaker is open') {
+    super(message);
+    this.name = 'CircuitOpenError';
+  }
+}
+
+/** The per-shop bulkhead is full (too many in-flight AI calls for this shop, 007). Transient → retry. */
+export class BulkheadFullError extends Error {
+  constructor(message = 'per-shop AI concurrency limit reached') {
+    super(message);
+    this.name = 'BulkheadFullError';
   }
 }

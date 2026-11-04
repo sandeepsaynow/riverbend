@@ -103,6 +103,8 @@ services:
       MAIL_SMTP_PORT: "1025"
       MAIL_FROM: ${MAIL_FROM:-Riverbend Cycles <no-reply@riverbend.example>}
       MAIL_REPLY_DOMAIN: ${MAIL_REPLY_DOMAIN:-reply.riverbend.example}
+      # Resilience (007): AI kill switch + breaker + per-shop bulkhead (defaults are sane).
+      AI_PAUSED: ${AI_PAUSED:-false}
       # Real provider via the proxy — OPT-IN. Empty by default → the worker uses the FakeGateway (empty
       # strings are treated as unset by config). Set these in .env + run `--profile llm` to go live.
       # NOTE: the worker gets NO OPENAI_API_KEY — only the proxy endpoint, the logical model name, and
