@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars and fill in. No secrets here — secret VALUES go into Secret Manager
+# versions out-of-band (the Terraform only creates the empty secret containers).
+project_id    = "your-gcp-project"
+region        = "us-central1"
+domain        = "intake.example.com"
+github_repo   = "your-org/riverbend"
+image_api     = "us-central1-docker.pkg.dev/your-gcp-project/riverbend/api@sha256:REPLACE"
+image_worker  = "us-central1-docker.pkg.dev/your-gcp-project/riverbend/worker@sha256:REPLACE"
+litellm_image = "ghcr.io/berriai/litellm@sha256:REPLACE"

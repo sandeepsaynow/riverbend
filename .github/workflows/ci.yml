@@ -38,3 +38,16 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITLEAKS_CONFIG: .gitleaks.toml
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Format check
+        run: terraform -chdir=infra/terraform fmt -check -recursive
+      - name: Init (no backend)
+        run: terraform -chdir=infra/terraform init -backend=false
+      - name: Validate
+        run: terraform -chdir=infra/terraform validate
+      # `terraform plan` runs here once GCP Workload Identity Federation is configured (B2); no apply.
