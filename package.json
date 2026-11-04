@@ -18,6 +18,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "better-auth": "1.7.16",
     "express": "^5.1.0",
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
@@ -30,6 +31,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@better-auth/cli": "1.4.21",
     "@testcontainers/postgresql": "^10.16.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.1",

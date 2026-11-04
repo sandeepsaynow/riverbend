@@ -22,6 +22,7 @@ import { registerHealthRoutes } from '../modules/health/routes.js';
 import { WebService } from '../modules/web/index.js';
 import { registerWebRoutes } from './web-routes.js';
 import { registerDocsRoutes } from './docs-routes.js';
+import { toNodeHandler, type Auth } from '../platform/auth/better-auth.js';
 import { EmailService } from '../modules/email/index.js';
 import { registerEmailWebhook } from './email-webhook.js';
 
@@ -38,12 +39,21 @@ export interface AppDeps {
   web?: WebService;
   /** Optional inbound email webhook (006); mounted only when provided + EMAIL_WEBHOOK_SECRET set. */
   email?: EmailService;
+  /** Optional Better Auth instance (010); when provided, its routes mount at /api/auth before JSON. */
+  betterAuth?: Auth;
 }
 
 /** Compose the HTTP app. Health is public; /admin requires an admin credential; /v1 a shop one. */
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.use(helmet());
+
+  // Better Auth (010): mount its handler on the Express 5 catch-all BEFORE any body parser (per its
+  // docs — it reads the raw request). Session-guarded portal routes are added further down.
+  if (deps.betterAuth) {
+    app.all('/api/auth/{*any}', toNodeHandler(deps.betterAuth));
+  }
+
   // Capture the raw body so the email webhook can verify its HMAC signature over exact bytes (006).
   app.use(express.json({ limit: '64kb', verify: (req, _res, buf) => { (req as { rawBody?: Buffer }).rawBody = buf; } }));
   app.use(pinoHttp({ logger: deps.logger }));

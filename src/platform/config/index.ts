@@ -70,6 +70,10 @@ const ConfigSchema = z.object({
   AI_MAX_CONCURRENCY_PER_SHOP: z.coerce.number().int().positive().default(4),
   // Slice 009: OpenAPI/Swagger at /docs. Enabled in non-production automatically; force with DOCS_ENABLED.
   DOCS_ENABLED: z.string().default('false').transform((v) => v.toLowerCase() === 'true' || v === '1'),
+  // Slice 010 staff portal (Better Auth). Portal is OFF unless BETTER_AUTH_SECRET is set (fail-closed).
+  // Better Auth uses the migrator (owner) connection for its global identity tables.
+  BETTER_AUTH_SECRET: z.string().optional(),
+  BETTER_AUTH_URL: z.string().default('http://localhost:8080'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
