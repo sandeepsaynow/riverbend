@@ -26,7 +26,8 @@ import { toNodeHandler, type Auth } from '../platform/auth/better-auth.js';
 import { AuthPortalService } from '../modules/portal/service.js';
 import { registerPortalRoutes } from './portal-routes.js';
 import { EmailService } from '../modules/email/index.js';
-import { registerEmailWebhook } from './email-webhook.js';
+import type { InboundWebhookVerifier } from '../modules/email/resend-webhook.js';
+import { registerResendWebhook } from './resend-webhook.js';
 
 export interface AppDeps {
   config: Config;
@@ -39,8 +40,10 @@ export interface AppDeps {
   orders: OrdersService;
   /** Optional public web form (005); mounted only when provided (needs WEB_FORM_SIGNING_KEY). */
   web?: WebService;
-  /** Optional inbound email webhook (006); mounted only when provided + EMAIL_WEBHOOK_SECRET set. */
+  /** Optional inbound email (006/D21); the webhook mounts only when both email + verifier are provided. */
   email?: EmailService;
+  /** Optional Resend webhook signature verifier (006/D21); needs RESEND_WEBHOOK_SECRET. */
+  emailVerifier?: InboundWebhookVerifier;
   /** Optional Better Auth instance (010); when provided, its routes mount at /api/auth before JSON. */
   betterAuth?: Auth;
 }
@@ -107,9 +110,10 @@ export function createApp(deps: AppDeps): Express {
     registerWebRoutes(app, { web: deps.web, allowedOrigins: origins });
   }
 
-  // Inbound email webhook (006), OUTSIDE shop auth — authenticated by HMAC signature. Off unless configured.
-  if (deps.email && deps.config.EMAIL_WEBHOOK_SECRET) {
-    registerEmailWebhook(app, { email: deps.email, webhookSecret: deps.config.EMAIL_WEBHOOK_SECRET });
+  // Inbound Resend webhook (006/D21), OUTSIDE shop auth — authenticated by the Svix signature. Off
+  // unless both the EmailService and a verifier (RESEND_WEBHOOK_SECRET) are configured.
+  if (deps.email && deps.emailVerifier) {
+    registerResendWebhook(app, { email: deps.email, verifier: deps.emailVerifier });
   }
 
   app.use(errorHandler(deps.logger));

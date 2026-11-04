@@ -53,14 +53,15 @@ const ConfigSchema = z.object({
   WEB_ALLOWED_ORIGINS: z.string().optional(),
   // Cloudflare Turnstile secret; when set, the real bot-check verifier is used (else a passing fake).
   TURNSTILE_SECRET: z.string().optional(),
-  // Slice 006 email (D10). The inbound webhook is OFF unless EMAIL_SIGNING_KEY + EMAIL_WEBHOOK_SECRET
-  // are set; the worker sends outbound mail only when MAIL_SMTP_HOST is set (else it no-ops locally).
-  EMAIL_SIGNING_KEY: z.string().optional(),       // signs reply tokens (reply+<token>@) — reply correlation
-  EMAIL_WEBHOOK_SECRET: z.string().optional(),     // HMAC secret for the inbound webhook signature
-  MAIL_SMTP_HOST: z.string().optional(),           // e.g. "mailpit" (compose) / "localhost"
-  MAIL_SMTP_PORT: z.coerce.number().int().positive().default(1025),
-  MAIL_FROM: z.string().default('Riverbend Cycles <no-reply@riverbend.example>'),
-  MAIL_REPLY_DOMAIN: z.string().default('reply.riverbend.example'),
+  // Slice 006 email (D10 → D21: Resend sole provider). Reply-token correlation is OFF unless
+  // EMAIL_SIGNING_KEY is set; outbound sends through Resend only when RESEND_API_KEY is set (else an
+  // in-memory no-op locally); the inbound webhook mounts only when RESEND_WEBHOOK_SECRET is also set.
+  EMAIL_SIGNING_KEY: z.string().optional(),        // signs reply tokens (reply+<token>@) — reply correlation
+  RESEND_API_KEY: z.string().optional(),           // Resend SDK key (outbound send + inbound content fetch)
+  RESEND_WEBHOOK_SECRET: z.string().optional(),    // Svix signing secret (whsec_…) for POST /webhooks/resend
+  RESEND_FROM: z.string().default('Riverbend Cycles <onboarding@resend.dev>'), // verified sender (or resend.dev while testing)
+  RESEND_REPLY_DOMAIN: z.string().default('riverbend.example'),                // reply+<token>@<this> (a Resend receiving domain)
+  EMAIL_MAX_SEND_ATTEMPTS: z.coerce.number().int().positive().default(5),      // bounded outbound retry before needs_review
   // Slice 007 resilience (D13/D15/D16). The global "AI paused" switch → requests park held_budget.
   AI_PAUSED: z.string().default('false').transform((v) => v.toLowerCase() === 'true' || v === '1'),
   // Circuit breaker around the model call: open after N consecutive failures for a cooldown.

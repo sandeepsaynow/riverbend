@@ -81,3 +81,22 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   Full rationale in ARCHITECTURE_DECISIONS D20; design in specs/010-staff-auth-portal/.
 - **Spec Kit reconciliation:** reconstructed the missing `specs/008-eval-deploy/spec.md` from the actual
   implemented eval + Terraform (no invented results). Created specs/010 spec/plan/tasks.
+
+## 2026-11-04 — Feature 006 amendment (D21): Resend is the sole email provider
+
+- **Replace Mailpit/SMTP with Resend** (official `resend` SDK 6.37.0; Svix 2.9.1 for webhook verify).
+  Outbound via `ResendTransport` with a stable idempotency key + bounded retry/backoff; inbound via the
+  Svix-signed `POST /webhooks/resend` → durable `email_events` (dedup by svix-id) → worker fetches content
+  with `emails.receiving.get` → existing signed-token correlation + Message-ID dedup + one-round guard.
+  Delivery/bounce events drive a monotonic `delivery_status` (API-200 ≠ delivered). Full rationale in
+  ARCHITECTURE_DECISIONS D21 (supersedes D10's provider choice); design in specs/006-email/.
+- **Preserved** unchanged: outbox semantics, `tokens.ts` reply correlation, tenant isolation (forced RLS;
+  `email_events` is a global no-PII ingestion log), one-question rule, pg-boss/reconciler durability.
+- **Removed:** `mailpit` compose service, `nodemailer`, `MailpitTransport`, `src/api/email-webhook.ts`,
+  `MAIL_SMTP_*`/`MAIL_FROM`/`MAIL_REPLY_DOMAIN`/`EMAIL_WEBHOOK_SECRET`. Terraform secret `email-webhook-secret`
+  → `resend-webhook-secret`; added `resend-api-key`.
+- **Tests:** 129/129 (real PostgreSQL); outbound send/idempotency/retry/park + Svix valid/invalid/missing +
+  raw-body verify + duplicate-event no-op + inbound fetch+correlate + forged/cross-tenant rejected +
+  one-round + monotonic delivery status — all deterministic (fake Resend client + real svix-signed
+  fixtures), **no live provider calls**. Real-provider verification (TEST C) BLOCKED without credentials +
+  a verified sending domain; manual steps in specs/006-email/quickstart.md.

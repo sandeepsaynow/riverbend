@@ -41,7 +41,8 @@ locals {
     "database-migrator-url",
     "web-form-signing-key",
     "email-signing-key",
-    "email-webhook-secret",
+    "resend-webhook-secret", # D21: Svix signing secret for POST /webhooks/resend (was email-webhook-secret)
+    "resend-api-key",        # D21: Resend SDK key — worker outbound + inbound content fetch
     "litellm-master-key",
     "openai-api-key",
   ]
@@ -58,8 +59,8 @@ resource "google_secret_manager_secret" "app" {
 
 # Each runtime SA may read only the secrets it needs (least privilege).
 locals {
-  api_secrets     = ["admin-bootstrap-token", "database-url", "database-admin-url", "database-migrator-url", "web-form-signing-key", "email-signing-key", "email-webhook-secret"]
-  worker_secrets  = ["database-url", "database-admin-url", "database-migrator-url", "email-signing-key"]
+  api_secrets     = ["admin-bootstrap-token", "database-url", "database-admin-url", "database-migrator-url", "web-form-signing-key", "email-signing-key", "resend-webhook-secret"]
+  worker_secrets  = ["database-url", "database-admin-url", "database-migrator-url", "email-signing-key", "resend-api-key"]
   litellm_secrets = ["litellm-master-key", "openai-api-key"]
 }
 

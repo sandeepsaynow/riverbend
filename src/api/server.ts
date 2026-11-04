@@ -12,6 +12,7 @@ import { OrdersService } from '../modules/orders/index.js';
 import { WebService } from '../modules/web/index.js';
 import { CloudflareTurnstileVerifier, FakeTurnstileVerifier } from '../modules/web/turnstile.js';
 import { EmailService } from '../modules/email/index.js';
+import { SvixVerifier } from '../modules/email/resend-webhook.js';
 import pg from 'pg';
 import { createAuth } from '../platform/auth/better-auth.js';
 import { createApp } from './app.js';
@@ -62,11 +63,18 @@ async function main(): Promise<void> {
     : undefined;
   if (web) logger.info('public web form enabled (/f)');
 
-  // Inbound email webhook (006) — only with a signing key + webhook secret (fail-closed).
+  // Inbound Resend webhook (006/D21) — only with a reply-token signing key + a Svix webhook secret
+  // (fail-closed). The api process holds no provider API key; it only verifies + records the event.
   const email = config.EMAIL_SIGNING_KEY
-    ? new EmailService(db, { signingKey: config.EMAIL_SIGNING_KEY, fromAddress: config.MAIL_FROM, replyDomain: config.MAIL_REPLY_DOMAIN })
+    ? new EmailService(db, {
+        signingKey: config.EMAIL_SIGNING_KEY,
+        fromAddress: config.RESEND_FROM,
+        replyDomain: config.RESEND_REPLY_DOMAIN,
+        maxSendAttempts: config.EMAIL_MAX_SEND_ATTEMPTS,
+      })
     : undefined;
-  if (email && config.EMAIL_WEBHOOK_SECRET) logger.info('inbound email webhook enabled (/webhooks/email)');
+  const emailVerifier = config.RESEND_WEBHOOK_SECRET ? new SvixVerifier(config.RESEND_WEBHOOK_SECRET) : undefined;
+  if (email && emailVerifier) logger.info('inbound Resend webhook enabled (/webhooks/resend)');
 
   // Staff portal (010) — only when BETTER_AUTH_SECRET is set. Better Auth uses its OWN Pool on the
   // migrator (owner) role for its global identity tables (never under tenant RLS).
@@ -82,7 +90,7 @@ async function main(): Promise<void> {
   if (betterAuth) logger.info('staff portal enabled (/admin, /staff, /api/auth)');
 
   // 6. Serve.
-  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}), ...(email ? { email } : {}), ...(betterAuth ? { betterAuth } : {}) });
+  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}), ...(email ? { email } : {}), ...(emailVerifier ? { emailVerifier } : {}), ...(betterAuth ? { betterAuth } : {}) });
   app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'api listening'));
 }
 

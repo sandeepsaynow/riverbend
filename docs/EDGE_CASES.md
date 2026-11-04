@@ -17,7 +17,8 @@ invariants.
 - All samples are stamped **Tuesday 22 September 2026, shop-local time** (zone not named — see
   `REQUIREMENTS.md` Q-TZ).
 - The samples carry **no customer contact details**. The evaluation gives web samples a made-up
-  address (e.g. `eval+m-1027@example.test`) so follow-ups have somewhere to go (Mailpit catches them).
+  address (e.g. `eval+m-1027@example.test`) so follow-ups have somewhere to go (in offline runs the
+  in-memory transport records them; with Resend configured they send via the provider, D21).
 - The brief says **8** messages are "deliberately tricky" but does not say which; the guide treats
   more than 8 as tricky. **Flagged as an ambiguity** in `REQUIREMENTS.md` Part D.
 

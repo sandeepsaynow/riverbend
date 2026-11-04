@@ -35,7 +35,7 @@ resource "google_cloud_run_v2_service" "api" {
         value = "production"
       }
       dynamic "env" {
-        for_each = toset(["admin-bootstrap-token", "web-form-signing-key", "email-signing-key", "email-webhook-secret"])
+        for_each = toset(["admin-bootstrap-token", "web-form-signing-key", "email-signing-key", "resend-webhook-secret"])
         content {
           name = replace(upper(env.value), "-", "_")
           value_source {
@@ -98,8 +98,19 @@ resource "google_cloud_run_v2_service" "worker" {
         name  = "LLM_BASE_URL"
         value = "${google_cloud_run_v2_service.litellm.uri}/v1"
       }
+      # Email (006/D21): the verified sender + Resend receiving domain (non-secret config). Set these to
+      # the verified domain before going live; outbound is restricted until a sending domain is verified.
+      env {
+        name  = "RESEND_FROM"
+        value = var.resend_from
+      }
+      env {
+        name  = "RESEND_REPLY_DOMAIN"
+        value = var.resend_reply_domain
+      }
       dynamic "env" {
-        for_each = toset(local.db_env)
+        # DB urls + email secrets (EMAIL_SIGNING_KEY for reply correlation, RESEND_API_KEY for send/fetch).
+        for_each = toset(concat(local.db_env, ["email-signing-key", "resend-api-key"]))
         content {
           name = replace(upper(env.value), "-", "_")
           value_source {

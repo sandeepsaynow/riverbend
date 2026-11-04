@@ -123,3 +123,20 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   pieces are in place; cutover is a flag flip once a safe atomicity test exists.
 - **Rollback:** no cutover happened; `BUDGET_AUTHORITY` flag reserved for the future flip. Tables
   unchanged (`shop_budgets`, `llm_calls`).
+
+## 2026-11-04 — Feature 006 (D21): Resend replaces Mailpit as the sole email provider
+
+- **Decision:** migrate email to Resend-only (SDK `resend` 6.37.0, `svix` 2.9.1). Chosen because Resend
+  offers first-class inbound receiving + a content-retrieval API, an official SDK, Svix-standard signed
+  webhooks, idempotency keys, and **domain-free inbound testing** — one provider for both directions.
+- **Convention:** amended Feature 006 in place (added research/plan/data-model/contracts/tasks/quickstart/
+  checklist to specs/006-email/; preserved the original Mailpit spec text as superseded) rather than
+  opening specs/011 — the smallest convention-consistent change, matching the 005–010 branch pattern.
+- **Scope held:** no new service/frontend; auth, pricing, LiteLLM, tenant isolation, AI extraction
+  untouched. Outbox/correlation/one-round/durability preserved; only the transport + inbound/verify
+  mechanism changed.
+- **Honesty:** every email test is deterministic (fake Resend client + real svix-signed fixtures); none
+  implies real delivery. A full real customer round (TEST C) is **BLOCKED** without credentials + a
+  verified sending domain — recorded as BLOCKED with exact manual steps, never fabricated.
+- **Door:** two-way — the transport and the webhook verifier are ports; a future provider swap touches
+  only the adapters (`ResendTransport`, `SvixVerifier`, `ResendReceiving`).

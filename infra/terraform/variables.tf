@@ -45,3 +45,15 @@ variable "domain" {
   type        = string
   description = "Public hostname for the external HTTPS load balancer's managed certificate."
 }
+
+variable "resend_from" {
+  type        = string
+  description = "Verified Resend sender, e.g. \"Riverbend Cycles <no-reply@mail.riverbend.example>\" (D21). Outbound is restricted until a sending domain is verified; use onboarding@resend.dev while testing."
+  default     = "Riverbend Cycles <onboarding@resend.dev>"
+}
+
+variable "resend_reply_domain" {
+  type        = string
+  description = "Resend receiving domain for reply+<token>@ correlation addresses (D21), e.g. a verified inbound subdomain or the account's managed <id>.resend.app."
+  default     = "riverbend.example"
+}

@@ -1,8 +1,17 @@
 # Feature 006 — Email (lean spec)
 
-**Input**: D10. Outbound clarification questions and inbound reply resumption over email, via local
-Mailpit. Email is a side effect owned by **code**, behind an `EmailTransport` port (Principle IV).
-Reuses the one-follow-up rule (I6) and the 003 reply-resumption path.
+> **AMENDMENT 2026-11-04 (D21): Resend is the sole email provider.** Mailpit/SMTP/nodemailer are
+> removed. Outbound uses the official `resend` SDK; inbound uses Resend's Svix-signed `email.received`
+> webhook + the Receiving API to fetch full content; delivery/bounce events update send status. All
+> business logic below is **preserved** (outbox, signed `reply+<token>@` correlation, Message-ID
+> de-dup, one round, failed-send → `needs_review`, forced-RLS isolation). The original Mailpit text is
+> kept for provenance but is superseded. New/changed requirements are **FR-008…FR-014** at the end; see
+> `research.md`, `plan.md`, `data-model.md`, `contracts/resend-webhook.md`, `tasks.md`, `quickstart.md`.
+
+**Input**: D10 → **D21**. Outbound clarification questions and inbound reply resumption over email, via
+**Resend** (local dev uses Resend's managed receiving address + the `resend` CLI listener; the original
+Mailpit sink is retired). Email is a side effect owned by **code**, behind an `EmailTransport` port
+(Principle IV). Reuses the one-follow-up rule (I6) and the 003 reply-resumption path.
 
 ## User stories
 - **US1 (P1) Ask one question by email.** When the pipeline needs a clarification (`awaiting_customer`),
@@ -27,8 +36,37 @@ Reuses the one-follow-up rule (I6) and the 003 reply-resumption path.
   duplicate is a no-op. Quoted history is stripped; the first reply wins (one clarification round, I6).
 - **FR-006**: A correlated reply records `reply_content` and enqueues resumption through the existing
   outbox → relay → pipeline path; the pipeline consumes the reply and charges it as a distinct call.
-- **FR-007**: All of email is **off unless configured** (`EMAIL_SIGNING_KEY`; SMTP only with
-  `MAIL_SMTP_HOST`) — the offline suite and keyless default run are unchanged.
+- **FR-007**: All of email is **off unless configured** (`EMAIL_SIGNING_KEY`; outbound only with
+  `RESEND_API_KEY`; inbound webhook only with `RESEND_WEBHOOK_SECRET`) — the offline suite and keyless
+  default run are unchanged (an in-memory no-op transport stands in).
+
+## Amendment requirements (D21 — Resend sole provider)
+- **FR-008 (outbound via Resend)**: `relayPending` sends through a `ResendTransport` using
+  `resend.emails.send({ from, to, subject, text, html, replyTo, headers }, { idempotencyKey })`. The
+  provider message id (`data.id`) is persisted. A sanitised HTML body is sent alongside plain text.
+- **FR-009 (send idempotency)**: each outbox row carries a stable `idempotency_key`
+  (`rb-followup-<request_id>`) so pg-boss/reconciler retries never send two clarification emails (I6);
+  the provider dedupes identical sends for 24h and the `email_outbox` UNIQUE(request_id) dedupes forever.
+- **FR-010 (bounded retry)**: transient send failures (network, 429, 5xx) keep the row `pending` with
+  `attempts`+`next_attempt_at` (capped exponential backoff, max `EMAIL_MAX_SEND_ATTEMPTS`); permanent
+  failures (e.g. invalid recipient) and exhausted retries → `failed` **and** request `needs_review`
+  (`email_delivery_failed`). A worker crash never loses a send (the row stays durable/`pending`).
+- **FR-011 (inbound webhook, Svix)**: inbound arrives at **`POST /webhooks/resend`**, authenticated by
+  **Svix** signature (`svix-id`/`svix-timestamp`/`svix-signature`) over the **raw body** with
+  `RESEND_WEBHOOK_SECRET`; invalid/missing signature → 400. The provider event identity (`svix-id`) is
+  **persisted before** the 200 ACK and de-duplicated; the body is **not** assumed present in the payload.
+- **FR-012 (durable async processing)**: the webhook only verifies + records the event + ACKs; the
+  **worker** drains unprocessed events — for `email.received` it fetches full content via
+  `resend.emails.receiving.get(email_id)` then runs existing correlation; retrying a failed event never
+  duplicates work orders (de-dup by `svix-id` and by Message-ID, plus the `awaiting_customer` guard).
+- **FR-013 (trust boundary)**: the `from` header is never trusted alone; correlation authority is the
+  signed `reply+<token>@` token (binds shop+request). SPF/DKIM/DMARC verdicts from the Receiving API are
+  recorded for observability. Cross-tenant reply injection and token replay are prevented by the signed
+  token + per-shop Message-ID de-dup + one-round guard. Oversized bodies are bounded; attachments ignored.
+- **FR-014 (delivery status)**: `email.sent/delivered/bounced/failed/delivery_delayed` events update the
+  outbox row's `delivery_status` (correlated by provider id); duplicate/out-of-order events never corrupt
+  status (monotonic transitions). A delivered-API-200 is **not** treated as delivered until a
+  `delivered` event arrives. Status is surfaced in the staff request view (010) where present.
 
 ## Invariants touched
 - I6 one round (first reply wins + `awaiting_customer` guard), I8 reply path. Isolation (I1) preserved:

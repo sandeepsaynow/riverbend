@@ -17,15 +17,6 @@ services:
       timeout: 3s
       retries: 30
 
-  # Local email sink (006): SMTP on 1025, web UI on 127.0.0.1:8025. Keyless; safe to always run.
-  mailpit:
-    image: axllent/mailpit:v1.21.3
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8025:8025"
-    expose:
-      - "1025"
-
   api:
     build: .
     depends_on:
@@ -43,10 +34,11 @@ services:
       WEB_FORM_SIGNING_KEY: ${WEB_FORM_SIGNING_KEY:-}
       WEB_ALLOWED_ORIGINS: ${WEB_ALLOWED_ORIGINS:-}
       TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
-      # Email (006): inbound webhook on the api. Off unless both are set.
+      # Email (006/D21): inbound Resend webhook on the api. Off unless both are set. The api holds NO
+      # provider API key — it only verifies the Svix signature and durably records the event.
       EMAIL_SIGNING_KEY: ${EMAIL_SIGNING_KEY:-}
-      EMAIL_WEBHOOK_SECRET: ${EMAIL_WEBHOOK_SECRET:-}
-      MAIL_REPLY_DOMAIN: ${MAIL_REPLY_DOMAIN:-reply.riverbend.example}
+      RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
+      RESEND_REPLY_DOMAIN: ${RESEND_REPLY_DOMAIN:-riverbend.example}
     ports:
       - "8080:8080"
     command: ["npm", "run", "start:api"]
@@ -99,12 +91,12 @@ services:
       QUEUE_EXPIRE_SECONDS: "120"
       RECONCILER_INTERVAL_MS: "10000"
       LOG_LEVEL: info
-      # Email (006): worker sends outbound + relays. Off unless EMAIL_SIGNING_KEY is set; SMTP via Mailpit.
+      # Email (006/D21): worker sends outbound via Resend + drains inbound/delivery events. Off unless
+      # EMAIL_SIGNING_KEY is set; Resend is used only when RESEND_API_KEY is set (else an in-memory no-op).
       EMAIL_SIGNING_KEY: ${EMAIL_SIGNING_KEY:-}
-      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-mailpit}
-      MAIL_SMTP_PORT: "1025"
-      MAIL_FROM: ${MAIL_FROM:-Riverbend Cycles <no-reply@riverbend.example>}
-      MAIL_REPLY_DOMAIN: ${MAIL_REPLY_DOMAIN:-reply.riverbend.example}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-Riverbend Cycles <onboarding@resend.dev>}
+      RESEND_REPLY_DOMAIN: ${RESEND_REPLY_DOMAIN:-riverbend.example}
       # Resilience (007): AI kill switch + breaker + per-shop bulkhead (defaults are sane).
       AI_PAUSED: ${AI_PAUSED:-false}
       # Real provider via the proxy — OPT-IN. Empty by default → the worker uses the FakeGateway (empty

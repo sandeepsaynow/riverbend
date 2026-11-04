@@ -166,6 +166,11 @@ safety rule is not reversed without a security review.
 
 ## D10 — Real email, in and out
 
+> **Superseded by D21 (2026-11-04):** the provider is now **Resend** (sole provider); Mailgun/Mailpit/
+> SMTP are retired. The transport port, outbox, signed `reply+<token>@` correlation, Message-ID de-dup,
+> one-round rule and failed-send→needs_review are all unchanged — only the provider and inbound/verify
+> mechanism changed. Original text kept for provenance.
+
 **Pick:** A transactional provider (**Mailgun** default) behind `EmailTransport` + an inbound
 adapter; **Mailpit** locally with a signed-payload script exercising the real inbound path.
 Replies matched by a **signed, expiring `reply+<token>@` address** plus `In-Reply-To`/`References`
@@ -374,3 +379,36 @@ a maintained library's security surface). JWT/SSO/microservice — out of scope 
 expose broad privileges → we wrap server-side with allow-listed fields and our own role checks; cookie
 Secure/HTTPS + trusted-proxy must be set in prod. **Door:** two-way (auth behind our session guard), but
 stored identity records are one-way (kept). See `specs/010-staff-auth-portal/`.
+
+## D21 — Resend as the sole email provider (supersedes D10's provider choice)
+
+**Pick:** **Resend** is the only supported email provider (official `resend` SDK **6.37.0**; webhooks
+verified with **Svix** `2.9.1`). Mailpit, SMTP and `nodemailer` are removed from the runtime and from the
+supported deployment. **Outbound** goes through the unchanged `email_outbox` relayed by the worker via a
+new `ResendTransport` — `resend.emails.send({…}, { idempotencyKey: rb-followup-<request_id> })` so job
+retries never double-send (24h provider dedupe + our `UNIQUE(request_id)`); transient failures (network/
+429/5xx) keep the row pending with bounded backoff, permanent failures and exhausted retries park the
+request `needs_review` (a worker crash never loses a durable send). **Inbound** uses Resend's `email.received`
+webhook at `POST /webhooks/resend`: the API verifies the **Svix** signature over the **raw body**, durably
+records the provider event (`email_events`, de-duped by `svix-id`) **before** the 200 ACK, and the **worker**
+then fetches the full message with `resend.emails.receiving.get(email_id)` (the webhook is metadata-only)
+and runs the existing signed-token correlation + Message-ID de-dup + one-round guard. Delivery/bounce events
+(`email.sent/delivered/bounced/failed/delivery_delayed`) update a monotonic `delivery_status` — an API-200
+is **not** "delivered" until the `delivered` event arrives.
+
+**Trust boundary:** the `from` header is never trusted alone — authority is the signed `reply+<token>@`
+address (binds shop+request); SPF/DKIM/DMARC verdicts from the Receiving API are recorded for observability.
+`email_events` is a **global** provider-ingestion log with no `shop_id` and no PII (so it is outside the
+shop_id→forced-RLS policy-check, same deviation class as the Better-Auth tables, D20); `email_outbox` /
+`inbound_emails` remain shop-owned under forced RLS.
+
+**Local testing (domain-free):** inbound works via a Resend-managed `<id>.resend.app` receiving address +
+the `resend webhooks listen` CLI (no built-in tunnel — supply a public URL). Outbound before domain
+verification may only send to the account's own email; a full two-way customer round (TEST C) is **BLOCKED**
+until a sending domain (SPF/DKIM) is verified — marked BLOCKED, never fabricated.
+
+**Why Resend:** first-class inbound receiving + content API, official SDK, Svix-standard signed webhooks,
+idempotency keys, and domain-free inbound testing — a single provider for both directions. GCP blocks
+port 25, so a provider is required anyway (matches D10's rationale). **Why not** Mailgun/Mailpit/Gmail/IMAP/
+SMTP/separate microservice: rejected — one provider, no second service, HTTPS-only. **Door:** two-way (the
+transport + verifier are ports; a future provider swap touches only the adapters). See `specs/006-email/`.

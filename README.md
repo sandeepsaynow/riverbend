@@ -14,7 +14,7 @@ Requires Docker. The default run is fully offline — the AI uses a deterministi
 nothing needs a provider key.
 
 ```sh
-ADMIN_BOOTSTRAP_TOKEN=some-long-random-secret make up   # Postgres + api + worker + Mailpit; migrates, seeds, serves
+ADMIN_BOOTSTRAP_TOKEN=some-long-random-secret make up   # Postgres + api + worker; migrates, seeds, serves
 # waits for http://localhost:8080/readyz
 make down
 ```
@@ -55,9 +55,12 @@ defences, and a bot check behind a Turnstile interface (offline fake passes). St
 
 ### Email (006)
 
-Set `EMAIL_SIGNING_KEY`. The worker emails the one clarification question through **Mailpit** (UI at
-`http://127.0.0.1:8025`); customer replies arrive at the signed inbound webhook `POST /webhooks/email`,
-are correlated + de-duplicated, and resume the pipeline.
+Set `EMAIL_SIGNING_KEY` + `RESEND_API_KEY` (and `RESEND_WEBHOOK_SECRET` for inbound). The worker emails
+the one clarification question through **Resend** (D21); replies arrive at the Svix-signed
+`POST /webhooks/resend` and resume the request. Offline (no keys) uses an in-memory no-op transport. See
+`specs/006-email/quickstart.md` for domain-free local testing with the `resend` CLI. Customer replies
+arrive at the Svix-signed inbound webhook `POST /webhooks/resend`, whose full content is fetched from the
+Receiving API, correlated by the signed token, de-duplicated, and resumed through the pipeline.
 
 ### Evaluation (008)
 
@@ -115,7 +118,7 @@ curl -X POST localhost:8080/admin/credentials/<id>/revoke -H "$A"          # rev
 - **Switch shops:** use a different shop's `$KEY`. **Prove isolation:** shop B's key on shop A's
   `request_id` → `404`. **Revoke & verify:** after revoke, the key returns `401`.
 - **Customer web form:** `http://localhost:8080/f/rb-downtown` (needs `WEB_FORM_SIGNING_KEY`).
-- **Mailpit:** `http://127.0.0.1:8025` (clarification emails).
+- **Email (Resend, D21):** outbound + inbound via Resend; no local mail UI. Offline runs no-op outbound.
 - **Three key kinds:** admin credential (operator) · shop API key (tenant) · LiteLLM virtual key
   (internal, never exposed). Use the **real AI** (proxy), not the FakeGateway, for the live demo.
 
@@ -175,7 +178,7 @@ reserve-then-settle **hard cap** for rollback or a shop that needs one. See [`do
 | 003 AI pipeline | strict extraction (I3), decide, one-question (I6), budget ledger | ✅ (FakeGateway + real OpenAI via proxy) |
 | 004 orders | one order/bike (I2), code pricing + snapshot (I5), staff reads | ✅ |
 | 005 web form | per-shop form, mandatory email, defences, status page | ✅ |
-| 006 email | outbound question, signed inbound webhook, reply resumption, dedupe | ✅ (Mailpit) |
+| 006 email | outbound question, Svix-signed inbound webhook + content fetch, reply resumption, dedupe, delivery status | ✅ (Resend, D21) |
 | 007 resilience | circuit breaker, per-shop bulkhead, AI-paused switch | ✅ (core) |
 | 008 eval + deploy | 40-message eval + results.md; GCP Terraform (validated) | ✅ (deterministic eval + IaC; live eval + deploy gated) |
 

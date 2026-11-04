@@ -96,7 +96,7 @@ quality but also raise scope well past the 8-hour budget (see the contradiction 
 | # | Feature | Rationale (guide) |
 |---|---------|-------------------|
 | P1 | **Real hosted web form** per shop (not a demo): mandatory email, bot check (Turnstile), rate limits, honeypot, CSP, idempotency key, status page + magic link. | D11 |
-| P2 | **Real email adapters**: outbound via provider (Mailgun default) + Mailpit locally; **signed inbound webhook** with reply-matching and auto-resume. | D10 |
+| P2 | **Real email adapters**: outbound + inbound via **Resend** (sole provider, D21; Mailpit/SMTP retired); **Svix-signed inbound webhook** (`/webhooks/resend`) with reply-matching, content fetch, and auto-resume. | D10 → D21 |
 | P3 | **Staff screen** (server-rendered): "needs attention", open work orders with totals, AI usage, request detail with retry/resume/approve/confirm-cancel actions. | D17 |
 | P4 | **One work order per bike** (not per request), created all-or-nothing in one transaction. | D8 |
 | P5 | **Forced row-level security** tenant isolation, proven by direct-to-DB attack tests. | D2 |

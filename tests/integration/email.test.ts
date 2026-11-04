@@ -1,30 +1,29 @@
-import { createHmac } from 'node:crypto';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
-import request from 'supertest';
-import type { Express } from 'express';
 import { startTestDb, stopTestDb, type TestDb } from '../helpers/db.js';
-import { createApp } from '../../src/api/app.js';
-import { createLogger } from '../../src/platform/observability/logger.js';
-import { AuthService } from '../../src/modules/auth/index.js';
-import { ShopsService } from '../../src/modules/shops/index.js';
-import { CatalogService } from '../../src/modules/catalog/index.js';
 import { IntakeService } from '../../src/modules/intake/index.js';
-import { OrdersService } from '../../src/modules/orders/index.js';
 import { EmailService } from '../../src/modules/email/index.js';
 import { mintReplyToken } from '../../src/modules/email/tokens.js';
-import { InMemoryEmailTransport, type EmailTransport, type OutboundEmail, type SentInfo } from '../../src/modules/email/transport.js';
-import type { Config } from '../../src/platform/config/index.js';
+import {
+  InMemoryEmailTransport,
+  PermanentSendError,
+  TransientSendError,
+  type EmailTransport,
+  type OutboundEmail,
+  type SentInfo,
+} from '../../src/modules/email/transport.js';
 
+// Provider-independent deterministic transports (D21/Phase J) — no Resend credentials, no network.
 const KEY = 'test-email-signing-key';
-const SECRET = 'test-webhook-secret';
-const CFG = { signingKey: KEY, fromAddress: 'rb <no-reply@rb.example>', replyDomain: 'reply.rb.example' };
+const CFG = { signingKey: KEY, fromAddress: 'rb <onboarding@resend.dev>', replyDomain: 'rb.resend.app', maxSendAttempts: 2 };
 
-class FailingTransport implements EmailTransport {
-  async send(_e: OutboundEmail): Promise<SentInfo> { throw new Error('smtp down'); }
+class PermanentTransport implements EmailTransport {
+  async send(_e: OutboundEmail): Promise<SentInfo> { throw new PermanentSendError('invalid_to_address'); }
+}
+class TransientTransport implements EmailTransport {
+  async send(_e: OutboundEmail): Promise<SentInfo> { throw new TransientSendError('rate_limit_exceeded'); }
 }
 
 let t: TestDb;
-let app: Express;
 let email: EmailService;
 let n = 0;
 
@@ -43,27 +42,27 @@ async function awaitingRequest(shopId: string, emailAddr: string | null): Promis
 beforeAll(async () => {
   t = await startTestDb();
   email = new EmailService(t.db, CFG);
-  const config = { DATABASE_ADMIN_URL: t.adminUrl, LOG_LEVEL: 'fatal', EMAIL_WEBHOOK_SECRET: SECRET } as unknown as Config;
-  app = createApp({
-    config, db: t.db, logger: createLogger('fatal'), auth: new AuthService(t.db),
-    shops: new ShopsService(t.db), catalog: new CatalogService(t.db), intake: new IntakeService(t.db), orders: new OrdersService(t.db), email,
-  });
 }, 180_000);
-
 afterAll(async () => { if (t) await stopTestDb(t); });
 
-describe('006 email — outbound follow-up', () => {
-  it('enqueues + relays the one question; marks it sent with a reply-to token', async () => {
+describe('006/D21 email — outbound via Resend transport', () => {
+  it('enqueues the one question with a sanitised HTML body + stable idempotency key; relays to sent', async () => {
     const shop = await createShop('rb-mail-a');
     const reqId = await awaitingRequest(shop, 'rider@example.com');
     expect(await email.enqueueFollowUp(shop, reqId)).toBe('queued');
+    const row = await t.db.adminQuery<{ html: string; idempotency_key: string }>(`SELECT html, idempotency_key FROM email_outbox WHERE request_id=$1`, [reqId]);
+    expect(row.rows[0]!.html).toContain('<p>'); // HTML alternative present
+    expect(row.rows[0]!.idempotency_key).toBe(`rb-followup-${reqId}`); // retries never double-send (I6/FR-009)
+
     const transport = new InMemoryEmailTransport();
     const res = await email.relayPending(transport);
     expect(res.sent).toBe(1);
     expect(transport.sent[0]!.to).toBe('rider@example.com');
-    expect(transport.sent[0]!.replyTo).toMatch(/^reply\+.+@reply\.rb\.example$/);
-    const row = await t.db.adminQuery<{ status: string }>(`SELECT status FROM email_outbox WHERE request_id=$1`, [reqId]);
-    expect(row.rows[0]!.status).toBe('sent');
+    expect(transport.sent[0]!.replyTo).toMatch(/^reply\+.+@rb\.resend\.app$/);
+    expect(transport.sent[0]!.idempotencyKey).toBe(`rb-followup-${reqId}`);
+    const st = await t.db.adminQuery<{ status: string; delivery_status: string }>(`SELECT status, delivery_status FROM email_outbox WHERE request_id=$1`, [reqId]);
+    expect(st.rows[0]!.status).toBe('sent');
+    expect(st.rows[0]!.delivery_status).toBe('sent'); // not "delivered" until a delivered event (FR-014)
   });
 
   it('no email on file → needs_review (no reply path, I8)', async () => {
@@ -75,56 +74,75 @@ describe('006 email — outbound follow-up', () => {
     expect(st.rows[0]!.last_error).toBe('no_reply_path');
   });
 
-  it('failed send → request parked needs_review, not lost (D10/VI)', async () => {
+  it('permanent send failure → failed + needs_review immediately (D10/VI), not retried', async () => {
     const shop = await createShop('rb-mail-c');
     const reqId = await awaitingRequest(shop, 'rider@example.com');
     await email.enqueueFollowUp(shop, reqId);
-    const res = await email.relayPending(new FailingTransport());
+    const res = await email.relayPending(new PermanentTransport());
     expect(res.failed).toBe(1);
-    const st = await t.db.adminQuery<{ state: string; last_error: string }>(`SELECT state, last_error FROM requests WHERE id=$1`, [reqId]);
+    expect(res.retried).toBe(0);
+    const st = await t.db.adminQuery<{ state: string; last_error: string; o_status: string }>(
+      `SELECT r.state, r.last_error, o.status AS o_status FROM requests r JOIN email_outbox o ON o.request_id=r.id WHERE r.id=$1`, [reqId]);
+    expect(st.rows[0]!.o_status).toBe('failed');
     expect(st.rows[0]!.state).toBe('needs_review');
     expect(st.rows[0]!.last_error).toBe('email_delivery_failed');
   });
-});
 
-describe('006 email — inbound reply correlation', () => {
-  it('correlates a signed reply, strips quotes, records it, enqueues resumption; dedups by Message-ID', async () => {
+  it('transient failures keep the row pending with bounded backoff, then park after the attempt cap', async () => {
     const shop = await createShop('rb-mail-d');
     const reqId = await awaitingRequest(shop, 'rider@example.com');
+    await email.enqueueFollowUp(shop, reqId);
+
+    const first = await email.relayPending(new TransientTransport());
+    expect(first.retried).toBe(1); // still pending, attempts=1, next_attempt_at in the future
+    const mid = await t.db.adminQuery<{ status: string; attempts: number }>(`SELECT status, attempts FROM email_outbox WHERE request_id=$1`, [reqId]);
+    expect(mid.rows[0]!.status).toBe('pending');
+    expect(mid.rows[0]!.attempts).toBe(1);
+
+    // Force the backoff window to elapse, then the 2nd attempt hits the cap (maxSendAttempts=2) → park.
+    await t.db.adminQuery(`UPDATE email_outbox SET next_attempt_at = now() - interval '1 minute' WHERE request_id=$1`, [reqId]);
+    const second = await email.relayPending(new TransientTransport());
+    expect(second.failed).toBe(1);
+    const st = await t.db.adminQuery<{ state: string; o_status: string }>(
+      `SELECT r.state, o.status AS o_status FROM requests r JOIN email_outbox o ON o.request_id=r.id WHERE r.id=$1`, [reqId]);
+    expect(st.rows[0]!.o_status).toBe('failed');
+    expect(st.rows[0]!.state).toBe('needs_review');
+  });
+});
+
+describe('006/D21 email — inbound reply correlation (fed by fetched content)', () => {
+  it('correlates a signed reply, strips quotes, records it, enqueues resumption; dedups by Message-ID', async () => {
+    const shop = await createShop('rb-mail-e');
+    const reqId = await awaitingRequest(shop, 'rider@example.com');
     const token = mintReplyToken(KEY, shop, reqId);
-    const inbound = { providerMessageId: '<p-1@mail>', toAddress: `reply+${token}@reply.rb.example`, text: 'please replace the pads\n> On Tue, you wrote:\n> Which brake service?' };
+    const inbound = { providerMessageId: '<p-1@mail>', toAddress: `reply+${token}@rb.resend.app`, text: 'please replace the pads\n> On Tue, you wrote:\n> Which brake service?' };
     expect(await email.handleInbound(inbound)).toBe('accepted');
     const fu = await t.db.adminQuery<{ reply_content: string }>(`SELECT reply_content FROM follow_ups WHERE request_id=$1`, [reqId]);
     expect(fu.rows[0]!.reply_content).toBe('please replace the pads'); // quoted history stripped
     const job = await t.db.adminQuery<{ n: string }>(`SELECT count(*)::text AS n FROM job_outbox WHERE request_id=$1`, [reqId]);
-    expect(Number(job.rows[0]!.n)).toBeGreaterThanOrEqual(1); // resumption enqueued
+    expect(Number(job.rows[0]!.n)).toBeGreaterThanOrEqual(1);
     expect(await email.handleInbound(inbound)).toBe('duplicate'); // same Message-ID → no double resume
   });
 
   it('forged token → unmatched; reply to a non-waiting request → ignored (one round)', async () => {
-    const shop = await createShop('rb-mail-e');
-    expect(await email.handleInbound({ providerMessageId: '<p-2@mail>', toAddress: 'reply+bogus.sig@reply.rb.example', text: 'hi' })).toBe('unmatched');
+    const shop = await createShop('rb-mail-f');
+    expect(await email.handleInbound({ providerMessageId: '<p-2@mail>', toAddress: 'reply+bogus.sig@rb.resend.app', text: 'hi' })).toBe('unmatched');
     const reqId = await awaitingRequest(shop, 'rider@example.com');
     await t.db.adminQuery(`UPDATE requests SET state='extracted' WHERE id=$1`, [reqId]); // already resolved
     const token = mintReplyToken(KEY, shop, reqId);
-    expect(await email.handleInbound({ providerMessageId: '<p-3@mail>', toAddress: `reply+${token}@reply.rb.example`, text: 'late reply' })).toBe('ignored_not_awaiting');
+    expect(await email.handleInbound({ providerMessageId: '<p-3@mail>', toAddress: `reply+${token}@rb.resend.app`, text: 'late reply' })).toBe('ignored_not_awaiting');
   });
-});
 
-describe('006 email — signed inbound webhook', () => {
-  it('rejects a bad signature (401) and accepts a correctly signed reply (200)', async () => {
-    const shop = await createShop('rb-mail-f');
-    const reqId = await awaitingRequest(shop, 'rider@example.com');
-    const token = mintReplyToken(KEY, shop, reqId);
-    const body = { message_id: '<wh-1@mail>', to: `reply+${token}@reply.rb.example`, text: 'replace pads' };
-    const raw = JSON.stringify(body);
-    const sig = createHmac('sha256', SECRET).update(raw).digest('hex');
-
-    const bad = await request(app).post('/webhooks/email').set('content-type', 'application/json').set('x-riverbend-signature', 'deadbeef').send(body);
-    expect(bad.status).toBe(401);
-
-    const ok = await request(app).post('/webhooks/email').set('content-type', 'application/json').set('x-riverbend-signature', sig).send(body);
-    expect(ok.status).toBe(200);
-    expect(ok.body.status).toBe('accepted');
+  it('a reply token minted for shop A cannot resume a request in shop B (no cross-tenant injection)', async () => {
+    const shopA = await createShop('rb-mail-g');
+    const shopB = await createShop('rb-mail-h');
+    const reqB = await awaitingRequest(shopB, 'rider@example.com');
+    // Token signed for (shopA, reqB): readReplyToken trusts the signed shopId (shopA); the per-tenant
+    // guard then finds no such request under shopA → unmatched/ignored, never touching shop B's data.
+    const forged = mintReplyToken(KEY, shopA, reqB);
+    const res = await email.handleInbound({ providerMessageId: '<p-x@mail>', toAddress: `reply+${forged}@rb.resend.app`, text: 'inject' });
+    expect(res).toBe('ignored_not_awaiting'); // request reqB is not visible under shopA → not resumed
+    const fu = await t.db.adminQuery<{ reply_content: string | null }>(`SELECT reply_content FROM follow_ups WHERE request_id=$1`, [reqB]);
+    expect(fu.rows[0]!.reply_content).toBeNull(); // shop B untouched
   });
 });

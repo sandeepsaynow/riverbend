@@ -24,7 +24,7 @@ reports **Converged**. `/speckit-constitution` runs **once** for the whole proje
 | **003-ai-pipeline** | The AI reads a message into a **strict form**. Code validates it, decides, asks **at most one** follow-up, and resumes on the reply. Every call is **recorded**, its cost **reserved then settled**. | D5, D6, D7 | 1 | 6 |
 | **004-orders-staff** | **One work order per bike**, priced by code. The open-orders read with totals. Cancel. The **staff screen**. | D8, D9, D17 | 1 & 2 | 4 |
 | **005-web-form** | The real hosted form, the status page, the server-side **bot check**, and the rate limits. | D11, D14 | 2 | 5 |
-| **006-email** | The **outbox**, email sending (Mailpit locally), the **signed inbound webhook**, and reply matching. | D10 | 2 | 4 |
+| **006-email** | The **outbox**, email sending via **Resend** (D21; Mailpit retired), the **Svix-signed inbound webhook** + Receiving-API content fetch, and reply matching. | D10 → D21 | 2 | 4 |
 | **007-resilience** | Retries, circuit **breaker**, per-shop **bulkhead**, the "AI paused" switch, the **outage and cap demos**, tracing and alerts. | D13, D15, D16 | 1 | 4 |
 | **008-eval-and-deploy** | The **40-sample run** + results table, recorded replay, **Terraform + CI**, the README and the architecture note. | D18, Part 7 | 1 | 3 |
 
@@ -84,7 +84,8 @@ The base every later slice stands on; **calls no AI**.
   can't execute on the staff screen.
 
 ### 006-email (D10)
-- `EmailTransport` + inbound adapter; Mailpit locally with a signed-payload script exercising the
+- `EmailTransport` + inbound adapter via **Resend** (D21); domain-free local testing via a `<id>.resend.app`
+  receiving address + the `resend webhooks listen` CLI exercising the
   real inbound path.
 - Outbox with retries; signed expiring `reply+<token>@` address + `In-Reply-To`/`References` matching;
   quoted-text stripping; auto-reply/bounce/attachment handling; `Message-ID` de-dup.

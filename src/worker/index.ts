@@ -11,7 +11,8 @@ import { PipelineService } from '../modules/pipeline/index.js';
 import { LiteLlmAdmin, LiteLlmProvisioner } from '../modules/budget/litellm-admin.js';
 import { OrdersService } from '../modules/orders/index.js';
 import { EmailService } from '../modules/email/index.js';
-import { InMemoryEmailTransport, MailpitTransport, type EmailTransport } from '../modules/email/transport.js';
+import { InMemoryEmailTransport, ResendTransport, type EmailTransport } from '../modules/email/transport.js';
+import { ResendReceiving, type ReceivingClient } from '../modules/email/receiving.js';
 import { processRequest } from './processor.js';
 import { handleExhausted, reconcileOnce } from './sweeper.js';
 
@@ -74,15 +75,22 @@ async function main(): Promise<void> {
     ...(resolveKey ? { resolveKey } : {}),
   });
 
-  // Email (006): send the one clarification question + relay pending outbound mail. Off unless an
-  // EMAIL_SIGNING_KEY is set; SMTP transport only when MAIL_SMTP_HOST is set (else an in-memory no-op).
+  // Email (006/D21): send the one clarification question + relay pending outbound mail, and drain
+  // inbound provider events. Off unless EMAIL_SIGNING_KEY is set; Resend transport + Receiving client
+  // only when RESEND_API_KEY is set (else an in-memory no-op — keyless default + offline tests).
   const email = config.EMAIL_SIGNING_KEY
-    ? new EmailService(db, { signingKey: config.EMAIL_SIGNING_KEY, fromAddress: config.MAIL_FROM, replyDomain: config.MAIL_REPLY_DOMAIN })
+    ? new EmailService(db, {
+        signingKey: config.EMAIL_SIGNING_KEY,
+        fromAddress: config.RESEND_FROM,
+        replyDomain: config.RESEND_REPLY_DOMAIN,
+        maxSendAttempts: config.EMAIL_MAX_SEND_ATTEMPTS,
+      })
     : undefined;
-  const mailTransport: EmailTransport = config.MAIL_SMTP_HOST
-    ? new MailpitTransport({ host: config.MAIL_SMTP_HOST, port: config.MAIL_SMTP_PORT, from: config.MAIL_FROM })
+  const mailTransport: EmailTransport = config.RESEND_API_KEY
+    ? new ResendTransport(config.RESEND_API_KEY, config.RESEND_FROM)
     : new InMemoryEmailTransport();
-  if (email) logger.info({ smtp: config.MAIL_SMTP_HOST ?? 'in-memory' }, 'email enabled');
+  const receiving: ReceivingClient | undefined = config.RESEND_API_KEY ? new ResendReceiving(config.RESEND_API_KEY) : undefined;
+  if (email) logger.info({ provider: config.RESEND_API_KEY ? 'resend' : 'in-memory' }, 'email enabled');
 
   const queue = new PgBossQueue({
     ownerUrl: config.DATABASE_MIGRATOR_URL,
@@ -117,6 +125,12 @@ async function main(): Promise<void> {
       email.relayPending(mailTransport).catch((err: unknown) =>
         logger.error({ err: err instanceof Error ? err.message : String(err) }, 'email relay failed'),
       );
+      // Drain inbound/delivery provider events (fetch content + correlate; update send status).
+      if (receiving) {
+        email.processPendingEvents(receiving).catch((err: unknown) =>
+          logger.error({ err: err instanceof Error ? err.message : String(err) }, 'email event drain failed'),
+        );
+      }
     }
   };
   await reconcileOnce(db, queue);

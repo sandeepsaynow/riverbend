@@ -59,7 +59,7 @@ See [AUTONOMOUS_DECISIONS.md](./AUTONOMOUS_DECISIONS.md) for rationale.
   verifiable migration pieces (real cost capture, fail-closed held_budget) are in, legacy ledger stays
   the active authority (native sole-authority cutover deferred — can't validate atomicity without paid
   budget-exhaustion calls; see [decision-log.md](./decision-log.md) + [AUTONOMOUS_DECISIONS.md](./AUTONOMOUS_DECISIONS.md)).
-- 005 web form, 006 email (Mailpit), 007 resilience (breaker/bulkhead/AI-paused) — lean specs under
+- 005 web form, 006 email (Resend, D21 — Mailpit retired), 007 resilience (breaker/bulkhead/AI-paused) — lean specs under
   `specs/00X-*/spec.md`.
 - 008 eval harness → real [results.md](./results.md) (deterministic 40-message run); GCP Terraform
   IaC **validated** (Terraform 1.17.1), CI runs `terraform validate`; README + [architecture note](./ARCHITECTURE_NOTE.md).
@@ -102,7 +102,7 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
 
 **Completed + verified (123/123 tests, typecheck+lint clean, all committed):**
 - 001 foundation, 002 intake/queue, 003 AI pipeline (+ real OpenAI via LiteLLM proxy), 004 orders.
-- 005 web form, 006 email (Mailpit + inbound webhook + reply correlation), 007 resilience
+- 005 web form, 006 email (Resend + Svix inbound webhook + content fetch + reply correlation, D21), 007 resilience
   (breaker/bulkhead/AI-paused).
 - 008 eval harness (deterministic docs/results.md + real docs/results-live.md) + Terraform (validated).
 - Correctness guards (m-1025/m-1009/m-1032) — real-eval defects fixed deterministically.
@@ -119,3 +119,17 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
 - Live 40-message eval real-cost beyond the demo run (B1 — needs the standing OpenAI key + budget).
 - Live GCP deploy (B2 — IaC validated, no `apply`).
 - Host `localhost:5432` port conflict blocks host-run commands against the compose DB (remap or free 5432).
+
+## CHECKPOINT 2026-11-04 (D21) — Feature 006 migrated to Resend (sole email provider)
+
+- **Completed + verified:** Resend outbound (`ResendTransport`, idempotency, bounded retry/backoff,
+  delivery-status), Svix-signed inbound webhook `POST /webhooks/resend` (durable `email_events`, dedup by
+  svix-id), worker drains events + fetches content via `emails.receiving.get` + existing correlation,
+  monotonic delivery status. Mailpit/SMTP/nodemailer removed. Migration `11000_resend_email.cjs`.
+  Spec Kit 006 amended (spec/research/plan/data-model/contracts/tasks/quickstart/checklist). Docs + D21 +
+  Terraform reconciled. `npm run typecheck` + `npm run lint` clean; `npx vitest run` **129/129**;
+  `docker compose config` valid (services: api, db, worker; +litellm under the llm profile);
+  `terraform validate` ✅.
+- **BLOCKED (external):** real-provider verification (TEST C, full two-way customer round) needs
+  `RESEND_API_KEY` + `RESEND_WEBHOOK_SECRET` + a verified sending domain + public webhook URL. Exact
+  manual steps in `specs/006-email/quickstart.md`. Not fabricated.
