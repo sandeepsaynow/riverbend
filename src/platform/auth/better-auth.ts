@@ -1,4 +1,4 @@
-import { betterAuth, type BetterAuthOptions } from 'better-auth';
+import { betterAuth } from 'better-auth';
 import { admin } from 'better-auth/plugins';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import type { Pool } from 'pg';
@@ -17,8 +17,10 @@ export interface AuthDeps {
   secureCookies: boolean;
 }
 
-export function authOptions(deps: AuthDeps): BetterAuthOptions {
-  return {
+// Inlined (not annotated as BetterAuthOptions) so TypeScript infers the admin() plugin's api methods
+// (createUser/banUser/listUsers/…) onto the returned type.
+export function createAuth(deps: AuthDeps) {
+  return betterAuth({
     database: deps.pool,
     secret: deps.secret,
     baseURL: deps.baseURL,
@@ -31,11 +33,7 @@ export function authOptions(deps: AuthDeps): BetterAuthOptions {
     },
     plugins: [admin()],
     advanced: { useSecureCookies: deps.secureCookies },
-  };
-}
-
-export function createAuth(deps: AuthDeps): ReturnType<typeof betterAuth> {
-  return betterAuth(authOptions(deps));
+  });
 }
 
 export type Auth = ReturnType<typeof createAuth>;

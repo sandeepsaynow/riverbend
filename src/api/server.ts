@@ -12,6 +12,8 @@ import { OrdersService } from '../modules/orders/index.js';
 import { WebService } from '../modules/web/index.js';
 import { CloudflareTurnstileVerifier, FakeTurnstileVerifier } from '../modules/web/turnstile.js';
 import { EmailService } from '../modules/email/index.js';
+import pg from 'pg';
+import { createAuth } from '../platform/auth/better-auth.js';
 import { createApp } from './app.js';
 
 const CATALOG_PATH = process.env.CATALOG_PATH ?? resolve(process.cwd(), 'catalog/catalog.json');
@@ -66,8 +68,21 @@ async function main(): Promise<void> {
     : undefined;
   if (email && config.EMAIL_WEBHOOK_SECRET) logger.info('inbound email webhook enabled (/webhooks/email)');
 
+  // Staff portal (010) — only when BETTER_AUTH_SECRET is set. Better Auth uses its OWN Pool on the
+  // migrator (owner) role for its global identity tables (never under tenant RLS).
+  const betterAuth = config.BETTER_AUTH_SECRET
+    ? createAuth({
+        pool: new pg.Pool({ connectionString: config.DATABASE_MIGRATOR_URL }),
+        secret: config.BETTER_AUTH_SECRET,
+        baseURL: config.BETTER_AUTH_URL,
+        trustedOrigins: [config.BETTER_AUTH_URL],
+        secureCookies: config.NODE_ENV === 'production',
+      })
+    : undefined;
+  if (betterAuth) logger.info('staff portal enabled (/admin, /staff, /api/auth)');
+
   // 6. Serve.
-  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}), ...(email ? { email } : {}) });
+  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}), ...(email ? { email } : {}), ...(betterAuth ? { betterAuth } : {}) });
   app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'api listening'));
 }
 

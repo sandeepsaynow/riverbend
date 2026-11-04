@@ -41,7 +41,7 @@ describe('010 Slice A — Better Auth over real PostgreSQL', () => {
 
     const ok = await request(app).post('/api/auth/sign-in/email').send({ email, password });
     expect(ok.status).toBe(200);
-    expect((ok.headers['set-cookie'] ?? []).join(';')).toMatch(/better-auth|session/i); // session cookie set
+    expect(([] as string[]).concat(ok.headers['set-cookie'] ?? []).join(';')).toMatch(/better-auth|session/i); // session cookie set
 
     const bad = await request(app).post('/api/auth/sign-in/email').send({ email, password: 'wrong-password-xx' });
     expect(bad.status).toBeGreaterThanOrEqual(400);

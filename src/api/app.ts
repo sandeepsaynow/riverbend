@@ -23,6 +23,8 @@ import { WebService } from '../modules/web/index.js';
 import { registerWebRoutes } from './web-routes.js';
 import { registerDocsRoutes } from './docs-routes.js';
 import { toNodeHandler, type Auth } from '../platform/auth/better-auth.js';
+import { AuthPortalService } from '../modules/portal/service.js';
+import { registerPortalRoutes } from './portal-routes.js';
 import { EmailService } from '../modules/email/index.js';
 import { registerEmailWebhook } from './email-webhook.js';
 
@@ -66,6 +68,22 @@ export function createApp(deps: AppDeps): Express {
   // OpenAPI + Swagger UI (009) — non-production only (or DOCS_ENABLED), never public in prod.
   if (deps.config.NODE_ENV !== 'production' || deps.config.DOCS_ENABLED) {
     registerDocsRoutes(app);
+  }
+
+  // Staff/admin PORTAL (010) — server-rendered, Better Auth sessions. Mounted BEFORE the 009 admin
+  // API router so its browser pages (/admin/login, /admin, /admin/staff, /admin/init, /staff/*) take
+  // precedence; any unmatched /admin/* (e.g. the 009 JSON API POST /admin/shops) falls through below.
+  if (deps.betterAuth) {
+    let host = 'localhost:8080';
+    try { host = new URL(deps.config.BETTER_AUTH_URL).host; } catch { /* default */ }
+    registerPortalRoutes(app, {
+      auth: deps.betterAuth,
+      portal: new AuthPortalService(deps.db, deps.betterAuth),
+      orders: deps.orders,
+      shops: deps.shops,
+      bootstrapToken: deps.config.ADMIN_BOOTSTRAP_TOKEN,
+      baseUrlHost: host,
+    });
   }
 
   const admin = createRouter();

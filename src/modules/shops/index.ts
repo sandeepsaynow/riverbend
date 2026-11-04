@@ -68,6 +68,12 @@ export class ShopsService {
       return res.rows[0] ?? null;
     });
   }
+
+  /** List all shops (admin/operator path, cross-shop — used by the staff portal admin UI, 010). */
+  async listShops(): Promise<Shop[]> {
+    const res = await this.db.adminQuery<Shop>(`SELECT id, slug, time_zone, display_name, created_at FROM shops ORDER BY slug`);
+    return res.rows;
+  }
 }
 
 export class InvalidSlug extends Error {
