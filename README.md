@@ -94,6 +94,13 @@ code; shop identity always comes from the authenticated credential. The eight in
 I2 one order per request+bike, I3 validate-before-persist, I4 per-shop monthly cap, I5 catalog pricing
 in cents, I6 ≤1 follow-up, I7 no committed secrets, I8 reply path) each have a named test.
 
+**Deterministic business-rule guards** keep the model honest where the real 40-message eval found it
+err: broad delegation ("whatever it needs") is routed to a **general inspection**, never an invented
+repair list (m-1025); a message addressing a **different shop** ("Hi Lakeshore team!") goes to
+`needs_review`, never an order or tenant transfer (m-1009); and a **model-invented extra bicycle** is
+dropped unless the message signals more than one (m-1032). Code owns the outcome, not the model. See
+`docs/results-live.md` (post-fix) vs `docs/results-live-before-guards.md` (pre-fix).
+
 ### Budget (I4) — LiteLLM-native (sole authority, 2.0.0)
 
 Per constitution **2.0.0** + D7, **LiteLLM is the sole active budget authority**: one **team per shop**
