@@ -19,6 +19,8 @@ import { registerIntakeRoutes } from '../modules/intake/routes.js';
 import { OrdersService } from '../modules/orders/index.js';
 import { registerOrdersRoutes } from '../modules/orders/routes.js';
 import { registerHealthRoutes } from '../modules/health/routes.js';
+import { WebService } from '../modules/web/index.js';
+import { registerWebRoutes } from './web-routes.js';
 
 export interface AppDeps {
   config: Config;
@@ -29,6 +31,8 @@ export interface AppDeps {
   catalog: CatalogService;
   intake: IntakeService;
   orders: OrdersService;
+  /** Optional public web form (005); mounted only when provided (needs WEB_FORM_SIGNING_KEY). */
+  web?: WebService;
 }
 
 /** Compose the HTTP app. Health is public; /admin requires an admin credential; /v1 a shop one. */
@@ -56,6 +60,12 @@ export function createApp(deps: AppDeps): Express {
   registerIntakeRoutes(v1, { intake: deps.intake });
   registerOrdersRoutes(v1, { orders: deps.orders });
   app.use('/v1', v1);
+
+  // Public web form (005), OUTSIDE shop auth — identity comes from a signed token. Off unless configured.
+  if (deps.web) {
+    const origins = (deps.config.WEB_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    registerWebRoutes(app, { web: deps.web, allowedOrigins: origins });
+  }
 
   app.use(errorHandler(deps.logger));
   return app;

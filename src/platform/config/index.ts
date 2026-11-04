@@ -39,6 +39,13 @@ const ConfigSchema = z.object({
   LLM_MODEL: z.string().optional(),
   LLM_API_KEY: z.string().optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  // Slice 005 public web form (D11). The web surface is OFF unless WEB_FORM_SIGNING_KEY is set
+  // (fail-closed; keeps the keyless default run). It signs per-shop form + status tokens (I8/III).
+  WEB_FORM_SIGNING_KEY: z.string().optional(),
+  // Comma-separated host allowlist for the public submit endpoint (empty → allow, for local dev).
+  WEB_ALLOWED_ORIGINS: z.string().optional(),
+  // Cloudflare Turnstile secret; when set, the real bot-check verifier is used (else a passing fake).
+  TURNSTILE_SECRET: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

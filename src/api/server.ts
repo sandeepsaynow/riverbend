@@ -9,6 +9,8 @@ import { ShopsService } from '../modules/shops/index.js';
 import { CatalogService } from '../modules/catalog/index.js';
 import { IntakeService } from '../modules/intake/index.js';
 import { OrdersService } from '../modules/orders/index.js';
+import { WebService } from '../modules/web/index.js';
+import { CloudflareTurnstileVerifier, FakeTurnstileVerifier } from '../modules/web/turnstile.js';
 import { createApp } from './app.js';
 
 const CATALOG_PATH = process.env.CATALOG_PATH ?? resolve(process.cwd(), 'catalog/catalog.json');
@@ -46,8 +48,19 @@ async function main(): Promise<void> {
   const intake = new IntakeService(db);
   const orders = new OrdersService(db);
 
+  // Public web form (005) — only when a signing key is configured (fail-closed; keyless runs skip it).
+  const web = config.WEB_FORM_SIGNING_KEY
+    ? new WebService(db, intake, {
+        signingKey: config.WEB_FORM_SIGNING_KEY,
+        turnstile: config.TURNSTILE_SECRET
+          ? new CloudflareTurnstileVerifier(config.TURNSTILE_SECRET)
+          : new FakeTurnstileVerifier(),
+      })
+    : undefined;
+  if (web) logger.info('public web form enabled (/f)');
+
   // 6. Serve.
-  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders });
+  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}) });
   app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'api listening'));
 }
 

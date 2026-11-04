@@ -30,6 +30,10 @@ services:
       DATABASE_MIGRATOR_URL: postgres://riverbend_migrator:mig_pw@db:5432/riverbend
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-dev-only-admin-secret-change-me}
       LOG_LEVEL: info
+      # Public web form (005) — off unless a signing key is provided (fail-closed).
+      WEB_FORM_SIGNING_KEY: ${WEB_FORM_SIGNING_KEY:-}
+      WEB_ALLOWED_ORIGINS: ${WEB_ALLOWED_ORIGINS:-}
+      TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
     ports:
       - "8080:8080"
     command: ["npm", "run", "start:api"]

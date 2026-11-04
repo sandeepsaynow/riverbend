@@ -12,6 +12,8 @@ export interface SubmitInput {
   source: MessageSource;
   submissionId: string;
   content: string;
+  /** Customer reply path (I8); mandatory for the web source, optional elsewhere. Never logged (VII). */
+  customerEmail?: string;
 }
 
 export interface SubmitResult {
@@ -49,11 +51,11 @@ export class IntakeService {
 
     return this.db.withTenant(input.shopId, async (client: PoolClient) => {
       const inserted = await client.query<{ id: string }>(
-        `INSERT INTO messages (shop_id, source, submission_id, content, content_fingerprint)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO messages (shop_id, source, submission_id, content, content_fingerprint, customer_email)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (shop_id, source, submission_id) DO NOTHING
          RETURNING id`,
-        [input.shopId, input.source, input.submissionId, input.content, fingerprint],
+        [input.shopId, input.source, input.submissionId, input.content, fingerprint, input.customerEmail ?? null],
       );
 
       if (inserted.rows.length > 0) {
