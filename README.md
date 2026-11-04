@@ -68,6 +68,38 @@ make eval-live   # same, through the real provider (gated; costs money; keep spe
 
 [`docs/results.md`](docs/results.md) is a real run read back from the database (not fabricated).
 
+### Admin, credentials & local demo (009)
+
+API docs: **Swagger UI at `http://localhost:8080/docs`** (+ `/openapi.json`) — non-production only.
+
+No-SQL local setup (against a running `make up`): **`make provision`** ensures the three shops and
+issues a shop API key each (shown once; idempotent — it never rotates an existing active key; use
+`make provision ROTATE=1` to replace). Then:
+
+```sh
+KEY=rb_shop_...        # from `make provision` output (copy once)
+A="Bearer rb_admin_bootstrap.$ADMIN_BOOTSTRAP_TOKEN"   # operator credential
+# submit a REAL OpenAI-backed request (needs `docker compose --profile llm up` + keys in .env):
+curl -X POST localhost:8080/v1/messages -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+     -d '{"source":"email","submission_id":"demo-1","content":"my road bike needs a tune-up"}'
+curl localhost:8080/v1/requests/<id>      -H "Authorization: Bearer $KEY"   # watch it reach ordered
+curl localhost:8080/v1/orders             -H "Authorization: Bearer $KEY"   # code-priced work order
+curl localhost:8080/v1/needs-attention    -H "Authorization: Bearer $KEY"
+# credential lifecycle (operator):
+curl -X POST localhost:8080/admin/shops/rb-downtown/credentials -H "$A" -H 'Content-Type: application/json' \
+     -d '{"name":"ops","scopes":["orders:read"],"expires_in_days":30}'     # issue (secret shown once)
+curl localhost:8080/admin/shops/rb-downtown/credentials -H "$A"            # list MASKED (no secret)
+curl -X POST localhost:8080/admin/credentials/<id>/rotate -H "$A"          # rotate
+curl -X POST localhost:8080/admin/credentials/<id>/revoke -H "$A"          # revoke → key now 401
+```
+
+- **Switch shops:** use a different shop's `$KEY`. **Prove isolation:** shop B's key on shop A's
+  `request_id` → `404`. **Revoke & verify:** after revoke, the key returns `401`.
+- **Customer web form:** `http://localhost:8080/f/rb-downtown` (needs `WEB_FORM_SIGNING_KEY`).
+- **Mailpit:** `http://127.0.0.1:8025` (clarification emails).
+- **Three key kinds:** admin credential (operator) · shop API key (tenant) · LiteLLM virtual key
+  (internal, never exposed). Use the **real AI** (proxy), not the FakeGateway, for the live demo.
+
 ## Configuration
 
 Every setting comes from the environment; the app **refuses to start** if a required one is missing,

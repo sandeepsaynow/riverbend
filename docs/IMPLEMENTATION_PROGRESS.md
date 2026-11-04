@@ -67,3 +67,9 @@ See [AUTONOMOUS_DECISIONS.md](./AUTONOMOUS_DECISIONS.md) for rationale.
 **Gated / deferred (not fabricated):** live 40-message eval + real provider cost (B1); LiteLLM-native
 sole-authority cutover; verified-channel cancellation + staff HTML; OpenTelemetry/retention sweeper;
 live GCP deploy (B2). See [AUTONOMOUS_HANDOFF.md](./AUTONOMOUS_HANDOFF.md).
+## Feature 009 — secure API access + OpenAPI + local ops (2026-11-04)
+
+Credential lifecycle on the existing shop-API-key model: scopes (empty=unrestricted), expiry (→401),
+rotation, masked listing, ids-only `credential_audit`. OpenAPI 3 + Swagger UI at `/docs` (non-prod).
+`make provision` for no-SQL local setup (idempotent). ADMIN_BOOTSTRAP_TOKEN unchanged. LiteLLM virtual
+keys never exposed. Tests: **112/112**. Spec: `specs/009-api-access-docs/spec.md`; decision: D19.

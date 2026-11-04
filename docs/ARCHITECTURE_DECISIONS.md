@@ -332,3 +332,18 @@ Flagged for a human decision (see also `REQUIREMENTS.md` Part D):
    behaviour with RLS `set_config` and pg-boss; LiteLLM calendar-month budgets and fail-open behaviour;
    Postmark inbound webhook signing; OTel GenAI attribute stability; pg-boss install privileges. → *Treat
    each as an assumption to test during the relevant slice, not a settled fact.*
+
+## D19 — API access, credential lifecycle, and docs (Feature 009)
+
+**Pick:** Keep the **API-first, shop-API-key** model (no human identity platform: no passwords,
+sessions, invitations, or RBAC users). Harden the existing credential with **scopes** (empty = legacy
+unrestricted), **expiry**, **rotation**, **masked listing**, and an **ids-only audit log**
+(`credential_audit`). `ADMIN_BOOTSTRAP_TOKEN` stays a restricted platform-operator credential for the
+admin path only. OpenAPI 3 + Swagger UI at `/docs` document the API in **non-production only**. A
+`make provision` command gives a no-SQL local demo (idempotent; never silently rotates). **Three key
+kinds stay distinct and are never confused:** admin credential (operator, `/admin`), shop API key
+(tenant, `/v1`), and the internal per-shop **LiteLLM virtual key** (never returned by any endpoint).
+**Secrets are shown once** and stored only as SHA-256 fingerprints — never retrievable. **Door:** mostly
+two-way (scopes/expiry/docs are additive); the API-key model itself is one-way (public contract).
+**Not built (documented):** human accounts/SSO, per-endpoint RBAC beyond coarse scopes, a production
+browser login. See `specs/009-api-access-docs/spec.md`.
