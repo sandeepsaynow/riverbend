@@ -8,6 +8,7 @@ import { LiteLlmGateway } from '../platform/llm/litellm-gateway.js';
 import { ResilientGateway } from '../platform/llm/resilient-gateway.js';
 import type { LlmGateway } from '../platform/llm/index.js';
 import { PipelineService } from '../modules/pipeline/index.js';
+import { LiteLlmAdmin, LiteLlmProvisioner } from '../modules/budget/litellm-admin.js';
 import { OrdersService } from '../modules/orders/index.js';
 import { EmailService } from '../modules/email/index.js';
 import { InMemoryEmailTransport, MailpitTransport, type EmailTransport } from '../modules/email/transport.js';
@@ -43,9 +44,24 @@ async function main(): Promise<void> {
   logger.info({ gateway: baseGateway.name, paused: config.AI_PAUSED }, 'ai gateway selected (resilience wrapped)');
 
   const orders = new OrdersService(db);
+
+  // Budget authority (2.0.0): in 'litellm' mode with a proxy + master key, provision a team/virtual key
+  // per shop and let the proxy enforce. Otherwise (legacy, or offline fake) no provisioner is wired.
+  let resolveKey: ((shopId: string) => Promise<string>) | undefined;
+  if (config.BUDGET_AUTHORITY === 'litellm' && config.LLM_BASE_URL && config.LLM_MASTER_KEY) {
+    const admin = new LiteLlmAdmin({ baseUrl: config.LLM_BASE_URL, masterKey: config.LLM_MASTER_KEY });
+    const provisioner = new LiteLlmProvisioner(db, admin, { budgetUsd: config.LITELLM_TEAM_BUDGET_USD, budgetDuration: config.LITELLM_BUDGET_DURATION });
+    resolveKey = (shopId) => provisioner.ensureVirtualKey(shopId);
+    logger.info({ budgetAuthority: 'litellm' }, 'budget enforcement: LiteLLM-native (per-shop teams/keys)');
+  } else {
+    logger.info({ budgetAuthority: config.BUDGET_AUTHORITY, provisioner: false }, 'budget enforcement');
+  }
+
   const pipeline = new PipelineService(db, gateway, {
     defaultBudgetMicros: config.DEFAULT_SHOP_BUDGET_MICROS,
     estimateMicros: config.LLM_ESTIMATE_MICROS,
+    budgetAuthority: config.BUDGET_AUTHORITY,
+    ...(resolveKey ? { resolveKey } : {}),
   });
 
   // Email (006): send the one clarification question + relay pending outbound mail. Off unless an

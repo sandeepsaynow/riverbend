@@ -39,6 +39,13 @@ const ConfigSchema = z.object({
   LLM_MODEL: z.string().optional(),
   LLM_API_KEY: z.string().optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  // Budget authority (constitution 2.0.0). 'litellm' = the proxy enforces per-shop team budgets (sole
+  // authority); 'legacy' = Riverbend reserve-then-settle hard cap (rollback). LLM_MASTER_KEY is used
+  // ONLY to provision teams/virtual keys (admin path), never for inference.
+  BUDGET_AUTHORITY: z.enum(['litellm', 'legacy']).default('litellm'),
+  LLM_MASTER_KEY: z.string().optional(),
+  LITELLM_TEAM_BUDGET_USD: z.coerce.number().positive().default(5),
+  LITELLM_BUDGET_DURATION: z.string().default('30d'),
   // Slice 005 public web form (D11). The web surface is OFF unless WEB_FORM_SIGNING_KEY is set
   // (fail-closed; keeps the keyless default run). It signs per-shop form + status tokens (I8/III).
   WEB_FORM_SIGNING_KEY: z.string().optional(),

@@ -17,16 +17,23 @@ export interface ExtractionInput {
   shopId?: string;
 }
 
+/** Per-call context the caller may supply — e.g. the shop's LiteLLM virtual key (never the master key). */
+export interface ExtractCtx {
+  apiKey?: string;
+}
+
 export interface LlmGateway {
   readonly name: string;
   /** Returns raw model output (unknown shape) — the caller validates against the schema (I3). */
-  extract(input: ExtractionInput): Promise<unknown>;
+  extract(input: ExtractionInput, ctx?: ExtractCtx): Promise<unknown>;
   /**
    * Proxy-calculated cost of the most recent successful call, in whole millionths of USD
    * (from `x-litellm-response-cost`). Undefined when the gateway cannot report it (e.g. the fake),
    * in which case the caller settles at its estimate. Never negative.
    */
   readonly lastCostMicros?: number | undefined;
+  /** Token usage + model of the most recent successful call, for accounting. Undefined for the fake. */
+  readonly lastUsage?: { model: string; promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
 }
 
 /**

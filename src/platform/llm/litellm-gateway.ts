@@ -1,4 +1,4 @@
-import { BudgetExceededError, type ExtractionInput, type LlmGateway } from './index.js';
+import { BudgetExceededError, type ExtractCtx, type ExtractionInput, type LlmGateway } from './index.js';
 
 /**
  * Real provider adapter (D6): all model traffic goes through a LiteLLM proxy (digest-pinned,
@@ -90,7 +90,7 @@ export class LiteLlmGateway implements LlmGateway {
     private readonly logger?: UsageLogger,
   ) {}
 
-  async extract(input: ExtractionInput): Promise<unknown> {
+  async extract(input: ExtractionInput, ctx?: ExtractCtx): Promise<unknown> {
     if (!this.config.baseUrl || !this.config.model) {
       throw new Error(
         'LiteLLM gateway not configured (LLM_BASE_URL / LLM_MODEL). Provide the proxy endpoint to ' +
@@ -103,8 +103,10 @@ export class LiteLlmGateway implements LlmGateway {
       ? `ALLOWED service codes: ${allowed.join(', ')}\n\nMessage:\n${input.content}`
       : `Message:\n${input.content}`;
 
+    // Per-call key (the shop's virtual key) overrides the configured key; never the master key.
+    const apiKey = ctx?.apiKey ?? this.config.apiKey;
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (this.config.apiKey) headers.authorization = `Bearer ${this.config.apiKey}`;
+    if (apiKey) headers.authorization = `Bearer ${apiKey}`;
 
     // Tolerate a base URL that already ends in /v1 (LLM_BASE_URL=http://litellm:4000/v1) or one that
     // does not — always resolve to a single /v1/chat/completions.

@@ -116,6 +116,25 @@ export class BudgetService {
     });
   }
 
+  /**
+   * Accounting-only record for the LiteLLM-sole-authority mode (constitution 2.0.0): persist the
+   * proxy-calculated cost + usage per call, idempotent on (shop, request, step, attempt) so a replay
+   * never double-counts. No reservation math and no cap check — the proxy owns enforcement.
+   */
+  async recordUsage(
+    shopId: string,
+    rec: { requestId: string; period: string; step: string; attempt: number; costMicros: number; model?: string | undefined; promptTokens?: number | undefined; completionTokens?: number | undefined; providerRequestId?: string | undefined },
+  ): Promise<void> {
+    await this.db.withTenant(shopId, (c) =>
+      c.query(
+        `INSERT INTO llm_calls (shop_id, request_id, period, step, attempt, estimate_micros, cost_micros, status, settled_at, model, prompt_tokens, completion_tokens, provider_request_id, cost_source)
+         VALUES ($1,$2,$3,$4,$5,0,$6,'settled',now(),$7,$8,$9,$10,'proxy_calculated')
+         ON CONFLICT (shop_id, request_id, step, attempt) DO NOTHING`,
+        [shopId, rec.requestId, rec.period, rec.step, rec.attempt, rec.costMicros, rec.model ?? null, rec.promptTokens ?? null, rec.completionTokens ?? null, rec.providerRequestId ?? null],
+      ),
+    );
+  }
+
   async usage(shopId: string, period: string): Promise<{ capMicros: number; spentMicros: number; reservedMicros: number } | null> {
     return this.db.withTenant(shopId, async (c) => {
       const r = await c.query<{ cap_micros: string; spent_micros: string; reserved_micros: string }>(

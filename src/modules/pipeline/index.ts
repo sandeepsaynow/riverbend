@@ -10,6 +10,10 @@ export interface PipelineOptions {
   estimateMicros: number;
   /** Override the billing period (YYYY-MM); defaults to the current UTC month. */
   period?: string;
+  /** Budget authority (constitution 2.0.0): 'litellm' (proxy enforces) or 'legacy' (reserve-then-settle). */
+  budgetAuthority?: 'litellm' | 'legacy';
+  /** Resolve a shop's LiteLLM virtual key (required in 'litellm' mode). Provisioning is lazy/idempotent. */
+  resolveKey?: (shopId: string) => Promise<string>;
 }
 
 const TERMINAL = new Set(['extracted', 'answered', 'needs_review']);
@@ -75,9 +79,23 @@ export class PipelineService {
     // Distinct budget-receipt step so the reply call is charged separately from the first extraction.
     const step = opts.isReply || hasReply ? 'extract-reply' : 'extract';
 
-    // Ensure a budget row (operator cap preserved if already set).
-    if (!(await this.budget.usage(shopId, period))) {
-      await this.budget.ensureBudget(shopId, period, this.opts.defaultBudgetMicros);
+    const authority = this.opts.budgetAuthority ?? 'legacy';
+
+    // Legacy: keep a shop_budgets row for the reserve-then-settle HARD cap. LiteLLM (2.0.0): the proxy
+    // owns the cap — resolve the shop's virtual key (provisioning is lazy + idempotent). If the budget
+    // infrastructure is unavailable, fail closed into a recoverable hold (I4 fail-closed).
+    let virtualKey: string | undefined;
+    if (authority === 'legacy') {
+      if (!(await this.budget.usage(shopId, period))) {
+        await this.budget.ensureBudget(shopId, period, this.opts.defaultBudgetMicros);
+      }
+    } else if (this.opts.resolveKey) {
+      try {
+        virtualKey = await this.opts.resolveKey(shopId);
+      } catch {
+        await this.setStateWithError(shopId, requestId, 'held_budget', 'budget_infra_unavailable');
+        return;
+      }
     }
 
     await this.setState(shopId, requestId, 'processing');
@@ -86,31 +104,40 @@ export class PipelineService {
     const codes = await this.catalogCodes();
     const allowedServiceCodes = [...codes];
 
-    // Extract with validation (I3) and one escalation retry; reserve-then-settle each attempt (I4).
+    // Extract with validation (I3) and one escalation retry.
     let extraction: Extraction | null = null;
     let lastErr = '';
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const res = await this.budget.reserve({ shopId, requestId, period, step, attempt, estimateMicros: this.opts.estimateMicros });
-      if (!res.ok) {
-        await this.setState(shopId, requestId, 'held_budget');
-        return; // at the cap — honest no-AI hold (D7)
+      // Legacy performs the atomic reserve (hard cap); LiteLLM lets the proxy admit/deny.
+      let res: { ok: boolean; reused: boolean; callId?: string } = { ok: true, reused: false };
+      if (authority === 'legacy') {
+        res = await this.budget.reserve({ shopId, requestId, period, step, attempt, estimateMicros: this.opts.estimateMicros });
+        if (!res.ok) {
+          await this.setState(shopId, requestId, 'held_budget');
+          return; // at the cap — honest no-AI hold (D7)
+        }
       }
       let raw: unknown;
       try {
-        raw = await this.gateway.extract({ content, allowedServiceCodes, shopId });
+        raw = await this.gateway.extract({ content, allowedServiceCodes, shopId }, virtualKey ? { apiKey: virtualKey } : undefined);
       } catch (err) {
-        if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, 0);
+        if (authority === 'legacy' && res.callId && !res.reused) await this.budget.settle(shopId, res.callId, 0);
         if (err instanceof BudgetExceededError || err instanceof AiPausedError) {
-          // Budget authority denied admission (I4), or the AI-paused switch is on (007): honest no-AI
-          // hold, no retry. Staff see held_budget; it resumes when the cap/switch clears.
+          // Proxy denied admission (I4), or the AI-paused switch is on (007): honest no-AI hold, no
+          // retry. Staff see held_budget; it resumes when the cap/switch clears.
           await this.setState(shopId, requestId, 'held_budget');
           return;
         }
-        throw err; // transient (timeout / circuit-open / bulkhead) → let pg-boss retry, then DLQ → needs_review
+        throw err; // transient (timeout / circuit-open / bulkhead) → pg-boss retries, then DLQ → needs_review
       }
-      // Settle at the proxy-calculated real cost when available (FR-007), else the estimate.
-      const costMicros = this.gateway.lastCostMicros ?? this.opts.estimateMicros;
-      if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, costMicros);
+      const costMicros = this.gateway.lastCostMicros ?? (authority === 'legacy' ? this.opts.estimateMicros : 0);
+      if (authority === 'legacy') {
+        if (res.callId && !res.reused) await this.budget.settle(shopId, res.callId, costMicros);
+      } else {
+        // LiteLLM mode: record the proxy-calculated cost for accounting (idempotent; no reservation).
+        const u = this.gateway.lastUsage;
+        await this.budget.recordUsage(shopId, { requestId, period, step, attempt, costMicros, model: u?.model, promptTokens: u?.promptTokens, completionTokens: u?.completionTokens });
+      }
       try {
         extraction = validateExtraction(raw, codes);
         break;

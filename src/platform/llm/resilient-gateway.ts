@@ -2,6 +2,7 @@ import {
   AiPausedError,
   BulkheadFullError,
   CircuitOpenError,
+  type ExtractCtx,
   type ExtractionInput,
   type LlmGateway,
 } from './index.js';
@@ -44,11 +45,15 @@ export class ResilientGateway implements LlmGateway {
     return this.inner.lastCostMicros;
   }
 
+  get lastUsage(): { model: string; promptTokens: number; completionTokens: number; totalTokens: number } | undefined {
+    return this.inner.lastUsage;
+  }
+
   private clock(): number {
     return this.opts.now ? this.opts.now() : Date.now();
   }
 
-  async extract(input: ExtractionInput): Promise<unknown> {
+  async extract(input: ExtractionInput, ctx?: ExtractCtx): Promise<unknown> {
     if (this.opts.isPaused?.()) throw new AiPausedError();
 
     // Circuit breaker: refuse fast while open (until the cooldown elapses → one half-open trial).
@@ -63,7 +68,7 @@ export class ResilientGateway implements LlmGateway {
     this.inFlight.set(key, current + 1);
 
     try {
-      const out = await this.inner.extract(input);
+      const out = await this.inner.extract(input, ctx);
       this.consecutiveFailures = 0; // success closes the breaker
       return out;
     } catch (err) {
