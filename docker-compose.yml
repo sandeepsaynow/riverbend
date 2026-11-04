@@ -61,15 +61,17 @@ services:
     image: ghcr.io/berriai/litellm:main-stable@sha256:37e2dafb088a7723beb998590682957386dfc83ffea1848486f8e0e5cfac0b06
     profiles: ["llm"]
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
     environment:
-      # Backing-provider key — read ONLY by the proxy (never passed to the app, browser, or logs). Soft
-      # default so the default (no-profile) `make up` still resolves with no key; if empty when the
-      # profile runs, the proxy/provider fails fast with a clear auth error. Set it in .env to go live.
+      # Backing-provider key — read ONLY by the proxy (never passed to the app, browser, or logs).
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # The proxy requires a master key; the worker must present the same value as LLM_API_KEY. If empty
-      # under this profile the proxy refuses to start with an explicit message.
+      # The proxy requires a master key; used ONLY for provisioning (admin), never ordinary inference.
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      # Isolated persistence for native budgets/teams/keys/spend (2.0.0): its own DB + restricted role.
+      DATABASE_URL: postgresql://litellm_app:litellm_pw@db:5432/litellm
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
     # Bound to loopback only: reachable by the operator at 127.0.0.1:4000, never on external interfaces.
@@ -107,10 +109,12 @@ services:
       AI_PAUSED: ${AI_PAUSED:-false}
       # Real provider via the proxy — OPT-IN. Empty by default → the worker uses the FakeGateway (empty
       # strings are treated as unset by config). Set these in .env + run `--profile llm` to go live.
-      # NOTE: the worker gets NO OPENAI_API_KEY — only the proxy endpoint, the logical model name, and
-      # the proxy key. Secrets reach only the component that needs them.
+      # NOTE: the worker gets NO OPENAI_API_KEY. For native budgets (2.0.0) it holds only the MASTER key
+      # (provisioning) + resolves a per-shop virtual key at runtime; it never uses the master for inference.
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      BUDGET_AUTHORITY: ${BUDGET_AUTHORITY:-litellm}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-20000}
     command: ["npm", "run", "start:worker"]

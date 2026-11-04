@@ -62,3 +62,14 @@ mechanism and wrongly kept the guarantee as hard; 2.0.0 corrects the guarantee t
 **Why accepted.** Per-call cost is micros against a $5 cap, so a one-call overshoot is immaterial; teams
 are set at/below the chain cap as mitigation. Verified at zero cost via a mock upstream (no paid calls).
 D7, Feature 003 FR-007, README and the architecture note are reconciled to match.
+
+## 2026-11-04 — Phase 5 acceptance VERIFIED (Riverbend adapters vs real LiteLLM + Postgres, zero cost)
+
+Ran Riverbend's own `LiteLlmAdmin` + `LiteLlmGateway` against a live LiteLLM 1.106.6 + PostgreSQL with a
+mock upstream + configured pricing (no paid OpenAI calls):
+1. Successful call → proxy-calculated cost captured (`x-litellm-response-cost` → 155000 micros).
+2. Exhausted team budget → calls rejected (HTTP 422 → `BudgetExceededError` → pipeline `held_budget`).
+3. **Tenant isolation**: shop B's team budget untouched by shop A's exhaustion (B still succeeded).
+4. **Restricted virtual keys** used for inference; the master key is confined to provisioning.
+Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — mapped to
+`BudgetExceededError`. Hermetic tests (92 passing) cover the Riverbend-side logic; this is the live proof.

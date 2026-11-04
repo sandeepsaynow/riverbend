@@ -135,13 +135,13 @@ export class LiteLlmGateway implements LlmGateway {
     }
 
     if (!res.ok) {
-      // Budget rejection (I4, fail-closed): the proxy denies admission over cap. LiteLLM returns 400
-      // with a budget error; some deployments use 429. Detect from a header-free status probe so no
-      // response body (which may echo content) is read or logged (VII).
-      if (res.status === 400 || res.status === 429) {
-        const flag = res.headers.get('x-litellm-error-type') ?? '';
-        // A 429 is budget/limit by convention here; a 400 is budget only when the proxy marks it.
-        if (res.status === 429 || /budget/i.test(flag)) {
+      // Budget rejection (I4, fail-closed): LiteLLM denies admission over cap with HTTP 422 (also seen
+      // as 400/429 on some setups), carrying error type "budget_exceeded". We read the error body ONLY
+      // to classify it and NEVER log it (a budget error carries no customer content, VII).
+      if (res.status === 422 || res.status === 400 || res.status === 429) {
+        let classify = '';
+        try { classify = await res.text(); } catch { /* ignore */ }
+        if (res.status === 429 || /budget/i.test(classify)) {
           throw new BudgetExceededError(`proxy denied admission (HTTP ${res.status})`);
         }
       }

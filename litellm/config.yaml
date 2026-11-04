@@ -1,15 +1,27 @@
-# LiteLLM proxy configuration (D6): worker → LlmGateway → LiteLlmGateway → LiteLLM proxy → OpenAI.
-# The proxy is the single place that holds the OpenAI key and does routing/fallbacks. Keys are read
-# from the proxy's OWN environment (os.environ/...), so no secret appears in this file or in Riverbend.
-# Riverbend sends only the logical alias below as LLM_MODEL.
+# LiteLLM proxy configuration (D6 + budget authority 2.0.0): worker → LlmGateway → LiteLLM proxy →
+# OpenAI. The proxy holds the provider key (its own env) and is the SOLE active budget authority:
+# one team per shop, restricted virtual keys, fail-closed admission. It persists teams/keys/spend in
+# its OWN PostgreSQL database (DATABASE_URL in docker-compose) — isolated from Riverbend's database.
 model_list:
-  - model_name: riverbend-extraction        # internal alias the worker requests (D6: config names a class)
+  - model_name: riverbend-extraction        # production: logical alias → backing OpenAI model
     litellm_params:
-      model: openai/gpt-4o-mini              # inexpensive OpenAI model with strict structured-output support
-      api_key: os.environ/OPENAI_API_KEY     # read from the proxy's env at runtime — value never stored here
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY     # read from the proxy's env — value never stored here
+
+  - model_name: mock-extract                 # testing: a MOCK upstream with configured pricing, so
+    litellm_params:                          # budget admission can be verified with NO paid calls.
+      model: openai/gpt-4o-mini
+      mock_response: '{"kind":"repair","bikes":[{"bikeNumber":1,"issues":["tune"],"serviceCodes":["TUNE_BASIC"]}],"urgency":"normal","dateWords":null,"questionDraft":null}'
+      input_cost_per_token: 0.001
+      output_cost_per_token: 0.001
 
 litellm_settings:
-  drop_params: true                          # tolerate provider-specific param differences behind the port
+  drop_params: true
+  # Phase 6 aggregate evaluation cap: a chain-wide spend ceiling comfortably below the USD 20 assignment
+  # limit. Applies across all virtual keys/teams; the master key is confined to provisioning, so the
+  # evaluation (which uses per-shop virtual keys) cannot bypass it.
+  max_budget: 15
+  budget_duration: 30d
 
 general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY  # callers (the worker) must present this; read from env, never stored
+  master_key: os.environ/LITELLM_MASTER_KEY  # provisioning/admin path only; never ordinary inference
