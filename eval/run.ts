@@ -255,24 +255,27 @@ function writeResults(mode: string, rows: Row[], cumulativeMicros: number): void
     lines.push(`- **m-1029** per-wheel ×2 → \`${show('m-1029')}\` (expected $150).`);
     lines.push(`- **m-1040** two bikes → \`${show('m-1040')}\` (expected $130).`);
     lines.push('');
-    lines.push('### Real-model divergences from the golden/deterministic run (defects/limitations)');
+    lines.push('### Real-eval defects — now fixed by deterministic guards (verify below)');
     lines.push('');
-    // Data-driven so the prose always matches THIS run (the model is not fully deterministic at temp 0).
+    lines.push('These three were real-model defects in an earlier run (see `docs/results-live-before-guards.md`),');
+    lines.push('now fixed by code guards (commit a77fc3e) so the outcome no longer depends on model variation:');
+    lines.push('');
     const r1009 = f('m-1009'); const r1025 = f('m-1025'); const r1032 = f('m-1032');
-    if (r1009) lines.push(r1009.outcome.startsWith('ordered')
-      ? `- **m-1009** wrong-shop greeting ("Hi Lakeshore team!" to rb-downtown) → the model did NOT flag wrong_shop; it produced \`${show('m-1009')}\` instead of needs_review. Wrong-shop detection is model-dependent — **a real limitation.**`
-      : `- **m-1009** wrong-shop greeting → \`${show('m-1009')}\` (model flagged it this run).`);
-    if (r1025) lines.push(/GENERAL_INSPECT/.test(r1025.services)
-      ? `- **m-1025** "whatever it needs" → \`${show('m-1025')}\` (general inspection — correct this run).`
-      : `- **m-1025** "whatever it needs" (delegation) → the model enumerated a specific repair list \`${show('m-1025')}\` instead of a single general inspection. The delegation guard only fires when the model self-classifies; here it invented a billable list (codes valid, so I3 passed). **Defect — guard bypassed by model behavior.**`);
-    if (r1032) lines.push(/TUNE_BASIC.*TUNE_BASIC|×2/.test(r1032.services)
-      ? `- **m-1032** single cargo bike → the model over-extracted multiple bikes \`${show('m-1032')}\` (expected one TUNE_BASIC $65). **Model error (run-dependent).**`
-      : `- **m-1032** single cargo bike → \`${show('m-1032')}\` (correct this run; note it over-extracted to two bikes in another run — single/multi-bike detection is not fully stable).`);
+    if (r1009) lines.push(r1009.outcome.startsWith('needs_review')
+      ? `- **m-1009** wrong-shop greeting ("Hi Lakeshore team!" to rb-downtown) → \`needs_review\`. The shop-mismatch guard routes it before any model call — never orders, never transfers tenants. ✅ fixed.`
+      : `- **m-1009** → \`${show('m-1009')}\` — **REGRESSION: expected needs_review.**`);
+    if (r1025) lines.push(/GENERAL_INSPECT/.test(r1025.services) && !/,/.test(r1025.services)
+      ? `- **m-1025** "whatever it needs" → \`${show('m-1025')}\` — the delegation guard forces the general-inspection path; no invented repair list, reported issues kept as the inspection scope. ✅ fixed.`
+      : `- **m-1025** → \`${show('m-1025')}\` — **REGRESSION: expected GENERAL_INSPECT only.**`);
+    if (r1032) lines.push(!/TUNE_BASIC.*TUNE_BASIC|×2/.test(r1032.services)
+      ? `- **m-1032** single cargo bike → \`${show('m-1032')}\` — the bike-count guard drops any model-invented extra bike (explicit "two bikes" like m-1040 is preserved). ✅ fixed.`
+      : `- **m-1032** → \`${show('m-1032')}\` — **REGRESSION: expected one bike.**`);
+    lines.push('');
     lines.push('- Borderline messages (e.g. m-1007/1008/1012/1022/1036/1037/1039) variously **ask one clarification question** or extract directly — the cautious, acceptable path. The brief supplies no customer replies, so resumption is NOT simulated (not invented).');
     lines.push('- m-1038 cancellation → not auto-handled; the model asks or routes to review. Verified-channel cancellation stays on the not-built list.');
-    lines.push('- **Non-determinism:** outcome counts shift run-to-run even at temperature 0 (observed 27 vs 30 orders across two runs). The model\'s interpretation varies; the **code invariants hold regardless** — pricing from the catalog (I5), idempotency (m-1003), isolation (I1), schema validation (I3), and the budget cap (I4).');
+    lines.push('- **Non-determinism:** model interpretation still varies run-to-run (e.g. ask-vs-extract on borderline messages), but the guarded cases above and all **code invariants hold regardless** — pricing (I5), idempotency (m-1003), isolation (I1), validation (I3), budget cap (I4).');
     lines.push('');
-    lines.push('Compare with the deterministic golden run in `docs/results.md`.');
+    lines.push('Compare with the deterministic golden run in `docs/results.md` and the pre-fix run in `docs/results-live-before-guards.md`.');
   }
   lines.push('');
   const outDir = resolve(process.cwd(), 'docs');
