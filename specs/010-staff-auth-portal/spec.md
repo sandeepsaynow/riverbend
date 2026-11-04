@@ -65,3 +65,20 @@ suite stays green.
 ## Explicitly NOT built (per decisions)
 Public signup, invitations, forced first-login change, email verification, self-service recovery, SSO/
 social, JWT, a separate identity microservice, a new frontend framework.
+
+## Amendment (D20.1, 2026-11-04) — recoverable first-admin bootstrap (P0 fix)
+The original bootstrap was not crash-safe (Better Auth user/account and the `auth_bootstrap` marker are
+separate transactions; a crash between them left a marker that permanently blocked init with no usable
+admin). Amended requirements:
+- **FR-010a:** completion is the invariant `auth_bootstrap.admin_user_id IS NOT NULL`. A marker without it
+  is PENDING and retryable; `isInitialized()` is false for a pending/failed marker.
+- **FR-010b:** `auth_bootstrap` carries `admin_email` (binds a pending init to one email) and `status`
+  (pending|completed). A retry against a pending marker with a *different* email is refused (`RecoveryRequired`).
+- **FR-010c:** `initFirstAdmin` creates the admin or, on `USER_ALREADY_EXISTS` from a prior/concurrent
+  attempt, reconciles to that user **after verifying it has a credential**, then records `admin_user_id`.
+  Errors leave the marker PENDING (no delete) → safe retry; concurrency converges on one admin.
+- **FR-010d:** a persistent credential-less orphan admin → `RecoveryRequired` (operator step), never
+  auto-completed (`setUserPassword`/`removeUser` are UNAUTHORIZED without an admin session).
+- **FR-011a (staff atomicity):** verify the shop before creating an identity; on duplicate email reconcile
+  only an orphan identity (no membership) — never attach a real account to a new shop; membership upsert is
+  idempotent (`unique(user_id, shop_id)`).

@@ -209,3 +209,40 @@ or secrets.
 - **T054 browser walkthrough** itself (steps 6–12 in a real browser) is a manual step — the automated
   supertest+real-Postgres suite and the live-API E2E above cover the same invariants, but a human still
   clicks through the pages.
+
+## Operator recovery — incomplete first-admin bootstrap (D20.1)
+
+If `/admin/init` ever fails and a later attempt is refused, the system is designed to **self-recover on
+retry** — simply POST `/admin/init` again **with the same admin email**; a PENDING marker reconciles
+(creates the admin, or completes an existing usable one). No lockout, no duplicate admin.
+
+Two cases need an explicit operator step (both operator-gated; no unauthenticated reset exists):
+
+1. **Pending init was started with a different email than you now want.** Inspect and clear the *pending*
+   marker, then re-init:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yml exec db \
+     psql -U riverbend_migrator -d riverbend -c \
+     "SELECT admin_user_id, status, admin_email FROM auth_bootstrap;"
+   # Only if admin_user_id IS NULL (a failed/pending init, NOT a completed one):
+   docker compose ... exec db psql -U riverbend_migrator -d riverbend -c \
+     "DELETE FROM auth_bootstrap WHERE admin_user_id IS NULL;"
+   # then POST /admin/init again.
+   ```
+2. **Pathological credential-less orphan** (`RecoveryRequired: incomplete admin account without a password`).
+   Remove the orphan Better Auth user (verify it has NO credential and NO session first), then re-init:
+   ```bash
+   # Verify it is a true orphan (no credential, no session):
+   docker compose ... exec db psql -U riverbend_migrator -d riverbend -c \
+     "SELECT u.id, (SELECT count(*) FROM \"account\" a WHERE a.\"userId\"=u.id AND a.\"providerId\"='credential') creds,
+             (SELECT count(*) FROM \"session\" s WHERE s.\"userId\"=u.id) sessions
+        FROM \"user\" u WHERE u.email='<the admin email>';"
+   # If creds=0 and sessions=0, delete the orphan user and the pending marker, then re-init:
+   docker compose ... exec db psql -U riverbend_migrator -d riverbend -c \
+     "DELETE FROM \"user\" WHERE email='<the admin email>'; DELETE FROM auth_bootstrap WHERE admin_user_id IS NULL;"
+   ```
+   **Never** delete a user with a credential or a session, and never touch a COMPLETED marker
+   (`admin_user_id IS NOT NULL`) — that is a real, usable admin.
+
+**Migration ordering note:** new migrations must be numbered AFTER all existing ones (the bootstrap fix is
+`12000_…`, after `11100_…`); node-pg-migrate refuses a migration that precedes an already-applied one.

@@ -72,3 +72,12 @@ Status key: [x] done+verified · [~] scaffolded/not fully verified · [ ] not st
 - [ ] T060 Update constitution(if warranted)/REQUIREMENTS/ARCH_DECISIONS(D20)/EDGE_CASES/SLICES/PROGRESS/
       decision-log/README/.env.example + Feature 010 design doc; reconcile 001/004/005/006/009 notes.
 - [ ] T061 Re-run analyze/converge; clean tree; commit locally (no push).
+
+## Phase 7 — Bootstrap recoverability (D20.1, P0 fix)
+- [x] T070 Migration `12000_bootstrap_state.cjs`: `auth_bootstrap` + `admin_email` + `status` (backfilled).
+- [x] T071 `initFirstAdmin` recoverable two-phase state machine (reserve → reject-if-completed →
+      create-or-reconcile-by-email+credential-check → complete; PENDING-on-error; concurrency-safe).
+- [x] T072 `createStaff` retry-safe (shop-first; reconcile only orphan identities; idempotent membership upsert).
+- [x] T073 Thread Better Auth's migrator Pool into `AuthPortalService` for identity reads; map `RecoveryRequired` → 409.
+- [x] T074 11 real-PG fault-injection tests (crash/partial/concurrent/completed/different-email/orphan +
+      staff bad-shop/orphan/duplicate/concurrent) in tests/integration/bootstrap-recovery.test.ts. 154/154.

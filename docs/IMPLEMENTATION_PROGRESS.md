@@ -182,3 +182,20 @@ browser session. See specs/010-staff-auth-portal/tasks.md.
   `reply+<token>@karoiechou.resend.app` address; `delivered@resend.dev` can't reply. Full outbound to
   arbitrary customers needs a verified sending domain (currently `onboarding@resend.dev`).
 - Regression: typecheck+lint clean; `vitest` **138/138**; stack torn down; host Postgres untouched.
+
+## CHECKPOINT 2026-11-04 (P0 AUTH RECOVERY) — bootstrap atomicity audit + fix
+
+- **P0 fixed (D20.1):** recoverable two-phase first-admin bootstrap. Root cause was a crash between the
+  (separate-transaction) Better Auth createUser and the marker UPDATE, plus `isInitialized()` treating any
+  marker row as done → permanent 409 lockout. Now: marker carries `admin_email`+`status`, completion ⟺
+  `admin_user_id IS NOT NULL`, retries reconcile (create or complete-existing-with-credential), concurrency
+  converges on one admin, credential-less orphan → `RecoveryRequired` (operator step). Migration `12000`.
+- **Staff creation hardened:** shop verified before identity creation; duplicate-email reconciled only for
+  orphan identities (real accounts refused); idempotent membership upsert.
+- **Tests:** +16 real-PostgreSQL (11 bootstrap/staff fault-injection + 4 reply-token invariants + 1 outbound
+  idempotency-on-retry). Full suite **154/154**; typecheck + lint clean; compose config (default + local
+  overlay) + terraform validate ok.
+- **Live:** migration 12000 applies; a pre-existing COMPLETED admin correctly yields 409 on re-init and the
+  auth gate redirects/401s as expected. Full fresh-init/login/staff/isolation/recovery is proven by the
+  automated fault-injection suite (the shared live test db already had a completed admin; not reset per the
+  no-destructive-cleanup rule). AI/Resend live paths unchanged since the prior turn.

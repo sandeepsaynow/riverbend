@@ -141,3 +141,16 @@ These edge cases are introduced by our design, not the brief's dataset:
 | AI correctness | m-1024 injection changes neither price nor urgency; invalid JSON / unknown service codes never saved; Spanish m-1033 works; the AI never supplies a price. | A model can be fooled or wrong; code must not trust it. |
 | Money | m-1029 = USD 150; m-1035 qty 2; m-1037 rear only; a catalog change leaves old orders alone; 20 parallel reservations vs a cap of 5 → exactly 5 succeed. | Wrong money is the error customers notice at once. |
 | Reliability | AI timeouts/503s retry then park; redelivered jobs don't double-process; a crash after the AI call causes no second charge; a failed email retries and never rolls back an order. | Failures are normal at any scale; the brief asks about them directly. |
+
+## Auth bootstrap + staff creation (D20.1) + reply-token (D21.2)
+- **Bootstrap crash between steps:** Better Auth user/account and the `auth_bootstrap` marker are separate
+  transactions. A crash leaves a PENDING marker (`admin_user_id NULL`); a retry reconciles (creates or, if
+  the user already exists with a credential, completes) — never a permanent lockout, never a second admin.
+- **Concurrent bootstrap:** `id=true` PK + reconcile-by-email converge on ONE admin; losers get
+  AlreadyInitialized, never a duplicate.
+- **Credential-less orphan admin** (pathological): flagged `RecoveryRequired` (operator removes the orphan
+  user, then re-inits) — never auto-completed, since `setUserPassword` is unauthorized headerless.
+- **Staff on a bad shop:** rejected before any identity is created (no orphan user). **Duplicate staff
+  email:** a real account is refused (not attached to a new shop); only a membership-less orphan is reconciled.
+- **Reply-token length:** `reply+<token>@` local part is always ≤ 64 octets (RFC 5321) via the compact
+  binary token — asserted across 2000 random UUID pairs; strict providers (Resend) reject longer.

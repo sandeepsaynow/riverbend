@@ -153,3 +153,17 @@ These are the brief's own "optional/choose-your-provider" boundaries, not shortc
   (fake lister/content), explicitly provider-API integration — NOT proof of real customer-email delivery.
 - **Scope held:** no new service/frontend/Redis/scheduler dep; auth, pricing, LiteLLM, tenant isolation,
   AI extraction untouched. **Door:** two-way — polling + webhook are independent adapters over one pipeline.
+
+## 2026-11-04 — Feature 010 (D20.1): recoverable bootstrap + staff-creation atomicity (P0)
+
+- **Decision:** replace the crash-unsafe bootstrap compensation with a recoverable two-phase marker;
+  completion invariant is `admin_user_id IS NOT NULL`. Reconcile-by-email (verifying a credential exists)
+  makes retries safe after a crash and convergent under concurrency, with no duplicate admins and no
+  lockout. A persistent credential-less orphan is surfaced as `RecoveryRequired` for an explicit operator
+  step rather than silently "completed".
+- **Grounded, not guessed:** probed real Better Auth — `createUser` is headerless-OK and creates user+
+  credential; duplicate → `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`; `setUserPassword`/`removeUser` are
+  UNAUTHORIZED headerless; `listUsers` by email unsupported. The fix uses only these verified behaviors +
+  migrator-pool identity reads.
+- **Scope held:** no new identity service, no custom password hashing, no architectural rewrite. Migration
+  appended as `12000` (never precedes an applied migration). 16 new real-PG tests; 154/154 total.

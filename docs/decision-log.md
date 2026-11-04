@@ -118,3 +118,15 @@ Gateway fix applied: LiteLLM returns **422** for budget rejection (not 400) — 
   duplicate ids, retry-after-failure, worker restart, cursor persistence, single-flight lease, wrong-shop/
   invalid/unrelated token, duplicate Message-ID, one-round. All deterministic (fake lister + fake content);
   **no live provider calls**.
+
+## 2026-11-04 — Feature 010 (D20.1): recoverable first-admin bootstrap (P0 fix)
+
+- **Root cause:** cross-library non-atomic bootstrap (Better Auth pool vs marker pool) + a try/catch
+  compensation that doesn't survive a process crash → a PENDING marker (`admin_user_id NULL`) that
+  `isInitialized()` wrongly treated as initialized → permanent 409 lockout. Confirmed by fault injection.
+- **Fix:** two-phase recoverable marker (`admin_email` + `status`, invariant `admin_user_id IS NOT NULL`);
+  reserve → reject-if-completed → create-or-reconcile-by-email (verify credential) → complete; marker left
+  PENDING on error (retryable); concurrency converges on one admin; credential-less orphan → RecoveryRequired.
+  Staff creation made retry-safe (shop-first; reconcile only orphan identities; idempotent membership upsert).
+  Migration `12000_bootstrap_state.cjs` (appended after 11100 — new migrations never precede applied ones).
+  Rationale in ARCHITECTURE_DECISIONS D20.1; 11 real-PG fault-injection tests in tests/integration/bootstrap-recovery.test.ts.

@@ -447,3 +447,28 @@ failed and parked `needs_review`. The compact form is **62 chars** (≤64) and k
 security (80-bit MAC, backed by the one-round + `awaiting_customer` + Message-ID de-dup gates).
 `mintReplyToken`/`readReplyToken` keep their signatures; nothing else changed. Verified live: a real
 clarification then sent successfully (outbox `sent`, provider id persisted). **Door:** two-way (encoding-only).
+
+## D20.1 — Recoverable first-admin bootstrap (P0 fix)
+
+**Problem:** the original bootstrap did `INSERT auth_bootstrap` → Better Auth `createUser` → `UPDATE
+auth_bootstrap` with a try/catch compensation. Better Auth (its own migrator Pool) and the marker
+(app_admin Pool) cannot share a transaction, and the compensation does not survive a **process crash**
+between steps. A crash left a marker with `admin_user_id = NULL` while `isInitialized()` counted ANY row
+→ permanent 409 lockout with no usable admin. (Confirmed by fault-injection, not guessed.)
+
+**Pick:** a **recoverable two-phase marker** keyed on the hard invariant `admin_user_id IS NOT NULL`
+(COMPLETED); anything else is PENDING/retryable. `auth_bootstrap` gains `admin_email` (binds a pending
+init to one email) and `status` (pending|completed mirror). `initFirstAdmin`:
+reserve-or-read (`INSERT … ON CONFLICT DO NOTHING`, `id=true` serializes concurrency) → if COMPLETED
+reject (409) → else create the admin, or if a prior/concurrent attempt already created it
+(`USER_ALREADY_EXISTS`) reconcile to that user **after verifying it has a credential** → record
+`admin_user_id` to COMPLETE. On any error the marker stays PENDING (no delete) so a retry reconciles — no
+lockout. Concurrency converges on one admin (same id); a different-email retry against a pending marker is
+refused; a persistent credential-less orphan is flagged `RecoveryRequired` (operator step) rather than
+falsely completed. Better Auth's admin `setUserPassword`/`removeUser` are **UNAUTHORIZED without an admin
+session** (verified), so recovery never depends on them; identity reads use Better Auth's own Pool.
+
+**Staff creation** made retry-safe the same way: verify the shop first (no orphan identity on a bad shop);
+on duplicate email reconcile **only** an orphan identity (no membership) — never silently attach a real
+account to a new shop; membership upsert is idempotent (`unique(user_id, shop_id)`). **Door:** two-way
+(a new reviewed migration `12000_bootstrap_state.cjs`; identity records are kept). See `specs/010-staff-auth-portal/`.

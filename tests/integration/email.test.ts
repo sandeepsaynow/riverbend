@@ -65,6 +65,22 @@ describe('006/D21 email — outbound via Resend transport', () => {
     expect(st.rows[0]!.delivery_status).toBe('sent'); // not "delivered" until a delivered event (FR-014)
   });
 
+  it('a send accepted by the provider then a lost status update is retried with the SAME idempotency key', async () => {
+    // Models FR-009: if Resend accepts the send (200 + id) but the DB status write is lost (crash), the
+    // row stays pending and the next relay re-sends with the SAME idempotency key → the provider dedupes
+    // (24h), so no duplicate email. We capture the key seen on each send and assert it is stable.
+    const shop = await createShop('rb-mail-idem');
+    const reqId = await awaitingRequest(shop, 'rider@example.com');
+    await email.enqueueFollowUp(shop, reqId);
+    const seen: Array<string | undefined> = [];
+    const capturing: EmailTransport = { async send(e) { seen.push(e.idempotencyKey); return { messageId: 'pm-stable' }; } };
+    await email.relayPending(capturing);
+    // Simulate the status update being lost after the provider accepted it.
+    await t.db.adminQuery(`UPDATE email_outbox SET status='pending', provider_message_id=NULL, next_attempt_at=NULL WHERE request_id=$1`, [reqId]);
+    await email.relayPending(capturing);
+    expect(seen).toEqual([`rb-followup-${reqId}`, `rb-followup-${reqId}`]); // stable key on both attempts
+  });
+
   it('no email on file → needs_review (no reply path, I8)', async () => {
     const shop = await createShop('rb-mail-b');
     const reqId = await awaitingRequest(shop, null);

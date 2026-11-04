@@ -50,7 +50,7 @@ beforeAll(async () => {
   intake = new IntakeService(t.db);
   orders = new OrdersService(t.db);
   await new CatalogService(t.db).seedFromFile(resolve(process.cwd(), 'catalog/catalog.json'));
-  app = createApp({ config, db: t.db, logger: createLogger('fatal'), auth: new AuthService(t.db), shops: new ShopsService(t.db), catalog: new CatalogService(t.db), intake, orders, betterAuth: auth });
+  app = createApp({ config, db: t.db, logger: createLogger('fatal'), auth: new AuthService(t.db), shops: new ShopsService(t.db), catalog: new CatalogService(t.db), intake, orders, betterAuth: auth, authPool });
   downtown = await shop('rb-downtown');
   northside = await shop('rb-northside');
 }, 180_000);

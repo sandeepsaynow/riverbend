@@ -1,6 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { fromNodeHeaders, type Auth } from '../platform/auth/better-auth.js';
-import { AuthPortalService, AlreadyInitialized } from '../modules/portal/service.js';
+import { AuthPortalService, AlreadyInitialized, RecoveryRequired } from '../modules/portal/service.js';
 import type { OrdersService } from '../modules/orders/index.js';
 import type { ShopsService } from '../modules/shops/index.js';
 import type { Db } from '../platform/db/index.js';
@@ -80,7 +80,8 @@ export function registerPortalRoutes(app: express.Express, deps: PortalDeps): vo
       res.status(201).json({ status: 'initialized', user_id: userId });
     } catch (err) {
       if (err instanceof AlreadyInitialized) { res.status(409).json({ error: 'already_initialized' }); return; }
-      res.status(400).json({ error: 'init_failed' });
+      if (err instanceof RecoveryRequired) { res.status(409).json({ error: 'recovery_required', message: (err as Error).message }); return; }
+      res.status(400).json({ error: 'init_failed' }); // retryable: the marker stays PENDING (no lockout)
     }
   });
 

@@ -224,3 +224,8 @@ Verified live: key 200; Receiving list+get schema match; live polling worker dis
 email; outbound to delivered@resend.dev 200+id; a **real clarification now sends** (outbox `sent`, provider
 id). BLOCKED-pending-user: the customer-reply resumption (reply to a `reply+<token>@karoiechou.resend.app`
 address) + arbitrary-recipient delivery (needs a verified sending domain; from is onboarding@resend.dev).
+
+**P0 AUTH RECOVERY (2026-11-04, D20.1):** fixed the crash-unsafe first-admin bootstrap — recoverable
+two-phase marker (admin_email+status; completion ⟺ admin_user_id NOT NULL), reconcile-by-email, no lockout,
+no duplicate admin, credential-less orphan → RecoveryRequired (operator step). Staff creation retry-safe.
+Migration 12000_bootstrap_state.cjs. +16 real-PG tests → 154/154. Operator recovery in FINAL_MANUAL_TEST.md.

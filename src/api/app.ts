@@ -22,6 +22,7 @@ import { registerHealthRoutes } from '../modules/health/routes.js';
 import { WebService } from '../modules/web/index.js';
 import { registerWebRoutes } from './web-routes.js';
 import { registerDocsRoutes } from './docs-routes.js';
+import type { Pool } from 'pg';
 import { toNodeHandler, type Auth } from '../platform/auth/better-auth.js';
 import { AuthPortalService } from '../modules/portal/service.js';
 import { registerPortalRoutes } from './portal-routes.js';
@@ -46,6 +47,9 @@ export interface AppDeps {
   emailVerifier?: InboundWebhookVerifier;
   /** Optional Better Auth instance (010); when provided, its routes mount at /api/auth before JSON. */
   betterAuth?: Auth;
+  /** Better Auth's migrator Pool (010); the portal service uses it for identity reads during bootstrap
+   *  reconciliation. The portal mounts only when BOTH betterAuth and authPool are provided. */
+  authPool?: Pool;
 }
 
 /** Compose the HTTP app. Health is public; /admin requires an admin credential; /v1 a shop one. */
@@ -76,12 +80,12 @@ export function createApp(deps: AppDeps): Express {
   // Staff/admin PORTAL (010) — server-rendered, Better Auth sessions. Mounted BEFORE the 009 admin
   // API router so its browser pages (/admin/login, /admin, /admin/staff, /admin/init, /staff/*) take
   // precedence; any unmatched /admin/* (e.g. the 009 JSON API POST /admin/shops) falls through below.
-  if (deps.betterAuth) {
+  if (deps.betterAuth && deps.authPool) {
     let host = 'localhost:8080';
     try { host = new URL(deps.config.BETTER_AUTH_URL).host; } catch { /* default */ }
     registerPortalRoutes(app, {
       auth: deps.betterAuth,
-      portal: new AuthPortalService(deps.db, deps.betterAuth),
+      portal: new AuthPortalService(deps.db, deps.betterAuth, deps.authPool),
       orders: deps.orders,
       shops: deps.shops,
       db: deps.db,

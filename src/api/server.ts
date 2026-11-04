@@ -88,10 +88,13 @@ async function main(): Promise<void> {
 
   // Staff portal (010) — only when BETTER_AUTH_SECRET is set. Better Auth uses its OWN Pool on the
   // migrator (owner) role for its global identity tables (never under tenant RLS).
-  const betterAuth = config.BETTER_AUTH_SECRET
+  // Hoist Better Auth's migrator Pool so the portal service can reuse it for bootstrap-reconciliation
+  // identity reads (D20.1) — the same global identity DB Better Auth owns.
+  const authPool = config.BETTER_AUTH_SECRET ? new pg.Pool({ connectionString: config.DATABASE_MIGRATOR_URL }) : undefined;
+  const betterAuth = authPool
     ? createAuth({
-        pool: new pg.Pool({ connectionString: config.DATABASE_MIGRATOR_URL }),
-        secret: config.BETTER_AUTH_SECRET,
+        pool: authPool,
+        secret: config.BETTER_AUTH_SECRET!,
         baseURL: config.BETTER_AUTH_URL,
         trustedOrigins: [config.BETTER_AUTH_URL],
         secureCookies: config.NODE_ENV === 'production',
@@ -100,7 +103,7 @@ async function main(): Promise<void> {
   if (betterAuth) logger.info('staff portal enabled (/admin, /staff, /api/auth)');
 
   // 6. Serve.
-  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}), ...(email ? { email } : {}), ...(emailVerifier ? { emailVerifier } : {}), ...(betterAuth ? { betterAuth } : {}) });
+  const app = createApp({ config, db, logger, auth, shops, catalog, intake, orders, ...(web ? { web } : {}), ...(email ? { email } : {}), ...(emailVerifier ? { emailVerifier } : {}), ...(betterAuth ? { betterAuth } : {}), ...(authPool ? { authPool } : {}) });
   app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'api listening'));
 }
 
