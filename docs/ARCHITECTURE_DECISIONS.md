@@ -612,3 +612,44 @@ token. **Backend deduplication, CSRF, and signed-form protections are unchanged*
 not rotated. **Verified live:** four sequential same-browser submissions across all three shops each got a
 distinct id and succeeded (303); reusing a consumed id with different content still returns 409. **Door:**
 two-way (client lifecycle + PRG; no schema change). See `specs/005-web-form/`.
+
+## D25 — New inbound email intake + Cloud Run worker health + honest LLM-failure classification & recovery
+
+**Context (audit, 2026-11-06):** a source audit (not docs) found the email module implemented only the
+*reply* flow — a brand-NEW customer email that is not a reply created nothing. Three adjacent gaps surfaced:
+the Cloud Run worker bound no HTTP port (its service startup/liveness probe would never pass); a bare
+provider `429` was misclassified as budget-exhausted (parked instead of retried); and requests parked at
+`held_budget` were never automatically re-driven.
+
+**Decision (four small, test-backed slices; existing states/infra reused):**
+1. **New inbound email → new request (A), kept strictly separate from reply-resume (B).** A `reply+<token>`
+   address still resumes the existing request; an email with **no** reply token is attributed to a shop by
+   its **verified destination address** via `shops.inbound_address` (migration `13000`, case-insensitively
+   unique) — never by the sender (FR-013). Unknown **or** ambiguous recipients are safely ignored (no tenant
+   to attribute → nothing created, no cross-tenant write). Idempotency is the provider Message-ID through
+   `IntakeService.submit` (`messages UNIQUE(shop_id,'email',submission_id)`): a provider retry or
+   webhook/poll overlap collapses to one request; two distinct emails with identical bodies are two requests
+   (no content-hash dedup). An invalid/expired reply token fails safe to `unmatched` — never a new order.
+   Body is the plain-text part, with a best-effort HTML→text fallback for HTML-only mail; empty bodies are
+   dropped. Wired only in the worker (where inbound is drained); the API process stays reply-only. The new
+   request flows the sanctioned `job_outbox → relay → pg-boss → pipeline` path like any intake.
+2. **Worker health listener (`src/worker/health-server.ts`).** Cloud Run runs the worker as a *service*, so
+   it must accept the probe on `$PORT` though it serves no API. A minimal listener answers `/healthz` (live)
+   and `/readyz` (ready once the queue + handlers are wired). `runtime.tf` now sets the worker port + an
+   HTTP startup/liveness probe on `/healthz`. Serves no tenant data, logs nothing (VII).
+3. **`429` ≠ budget.** Budget rejection is now identified by the proxy error **body** (`/budget/i`), not the
+   status alone. A bare `429` becomes a transient `RateLimitError` → pg-boss retries with backoff, instead
+   of a false `held_budget` park. 422/400 budget bodies and `AiPausedError` still park `held_budget`.
+4. **Automatic `held_budget` recovery (`recoverHeldBudget`).** A held request completed cleanly, so pg-boss
+   never retries it. The reconciler re-drives held requests older than `HELD_BUDGET_RETRY_SECONDS` (default
+   300s; `0` disables; skipped while AI is paused) by inserting a fresh `job_outbox` row — the same new-work
+   path intake uses, so **pg-boss remains the sole retry authority**. The pipeline re-checks the cap and
+   proceeds (budget reset/raised) or re-parks `held_budget` (no model spend on a denied admission); the
+   re-park renews `updated_at`, bounding re-drive to once per cooldown.
+
+**Honest non-goals (see `docs/not-built.md`):** error granularity still collapses at the DLQ boundary
+(timeout/503/non-JSON all read `processing attempts exhausted`); the LiteLLM-native budget is a **soft** cap
+(bounded concurrency overshoot, disclosed in the staff UI); attachments are not processed; new-inbound dedup
+relies on a stable RFC Message-ID. **Tests:** +24 (`tests/integration/email-new-inbound.test.ts`,
+`held-budget-recovery.test.ts`; `tests/unit/{email-normalize,worker-health,gateway-error-classify}.test.ts`)
+→ **220 passing**. **Door:** two-way (one additive column + reused states/paths). See `specs/006-email/`.

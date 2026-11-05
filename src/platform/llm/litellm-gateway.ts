@@ -1,4 +1,4 @@
-import { BudgetExceededError, type ExtractCtx, type ExtractionInput, type LlmGateway } from './index.js';
+import { BudgetExceededError, RateLimitError, type ExtractCtx, type ExtractionInput, type LlmGateway } from './index.js';
 import { REQUEST_KINDS } from '../../modules/pipeline/schema.js';
 
 /**
@@ -159,8 +159,13 @@ export class LiteLlmGateway implements LlmGateway {
       if (res.status === 422 || res.status === 400 || res.status === 429) {
         let classify = '';
         try { classify = await res.text(); } catch { /* ignore */ }
-        if (res.status === 429 || /budget/i.test(classify)) {
+        // Budget is identified by the proxy's error BODY, not the status code alone (D25). A bare 429
+        // with no budget marker is a genuine upstream rate-limit → transient (retry), never a budget hold.
+        if (/budget/i.test(classify)) {
           throw new BudgetExceededError(`proxy denied admission (HTTP ${res.status})`);
+        }
+        if (res.status === 429) {
+          throw new RateLimitError('LiteLLM proxy rate-limited the request (HTTP 429)');
         }
       }
       // Status only — an error body may echo the prompt/content, which must never be logged (VII).

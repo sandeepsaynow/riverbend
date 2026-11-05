@@ -28,12 +28,36 @@ export type EventResult = 'processed' | 'ignored' | 'error';
 export interface InboundEmail {
   providerMessageId: string;
   toAddress: string;
+  toAddresses?: string[]; // all recipients — new-inbound routing tries each against the shop map (D25)
   inReplyTo?: string;
   references?: string;
   text: string;
+  html?: string; // used only as a fallback when there is no plain-text part (HTML-only email)
+  from?: string; // bare sender; recorded as the reply-path email, never trusted for routing (FR-013)
+}
+
+/** Resolve a VERIFIED destination address to a shop id (D25). Backed by `shops.inbound_address`. */
+export interface ShopRouter {
+  resolveShopByInboundAddress(address: string): Promise<string | null>;
+}
+/** Narrow intake port for creating a NEW request from an inbound email (D25). Satisfied by IntakeService. */
+export interface NewInboundSink {
+  submit(input: {
+    shopId: string;
+    source: 'email';
+    submissionId: string;
+    content: string;
+    customerEmail?: string;
+  }): Promise<{ requestId: string; duplicate: boolean }>;
+}
+/** Optional collaborators enabling NEW-inbound intake. Absent on the API process / keyless+offline runs. */
+export interface EmailDeps {
+  router?: ShopRouter;
+  intake?: NewInboundSink;
 }
 
 const MAX_INBOUND_TEXT = 50_000; // bound customer-controlled body size (D21/FR-013)
+const MAX_INTAKE_CHARS = 20_000; // keep within IntakeService.MAX_CONTENT_CHARS for new-inbound submissions
 
 /**
  * Email side effects (D10 → D21, Resend sole provider): outbound clarification via a transactional
@@ -45,8 +69,12 @@ const MAX_INBOUND_TEXT = 50_000; // bound customer-controlled body size (D21/FR-
  */
 export class EmailService {
   private readonly maxSendAttempts: number;
-  constructor(private readonly db: Db, private readonly cfg: EmailConfig) {
+  private readonly router?: ShopRouter;
+  private readonly intake?: NewInboundSink;
+  constructor(private readonly db: Db, private readonly cfg: EmailConfig, deps: EmailDeps = {}) {
     this.maxSendAttempts = cfg.maxSendAttempts ?? 5;
+    if (deps.router) this.router = deps.router;
+    if (deps.intake) this.intake = deps.intake;
   }
 
   /** Queue the single follow-up question as an email. No email on file → park needs_review (I8). */
@@ -180,7 +208,10 @@ export class EmailService {
           const result = await this.handleInbound({
             providerMessageId: mail.messageId,
             toAddress,
+            toAddresses: mail.to,
             text: mail.text.slice(0, MAX_INBOUND_TEXT),
+            ...(mail.html ? { html: mail.html.slice(0, MAX_INBOUND_TEXT) } : {}),
+            ...(mail.from ? { from: mail.from } : {}),
           });
           const outcome: EventResult = result === 'accepted' || result === 'duplicate' ? 'processed' : 'ignored';
           await this.markEvent(ev.id, outcome, result);
@@ -293,14 +324,64 @@ export class EmailService {
     );
   }
 
-  /** Correlate + de-dup an inbound reply, record it, and enqueue resumption. Enforces one round. */
+  /**
+   * Dispatch an inbound email to exactly one of two flows (D25), which must never be confused:
+   *   (B) a `reply+<token>@…` address present → RESUME the token's existing request (one round).
+   *   (A) no reply token anywhere         → create a NEW request, attributed to the shop that owns the
+   *                                          VERIFIED destination address (never the sender).
+   * A reply-shaped address with an INVALID/expired token fails safe to `unmatched` — it is clearly a reply
+   * attempt, so we never turn it into an unrelated new order.
+   */
   async handleInbound(input: InboundEmail): Promise<InboundResult> {
     const token = this.extractToken(input);
-    if (!token) return 'unmatched';
-    const correlated = readReplyToken(this.cfg.signingKey, token);
-    if (!correlated) return 'unmatched';
-    const { shopId, requestId } = correlated;
+    if (token) {
+      const correlated = readReplyToken(this.cfg.signingKey, token);
+      if (!correlated) return 'unmatched'; // invalid/expired reply token → fail safe, never a new order
+      return this.resumeReply(correlated.shopId, correlated.requestId, input);
+    }
+    return this.handleNewInbound(input);
+  }
 
+  /**
+   * (A) New inbound email → new request. The destination address is resolved to a shop through the trusted
+   * router (`shops.inbound_address`); an unknown OR ambiguous recipient is safely ignored (there is no
+   * tenant to attribute it to, so nothing is created and no cross-tenant write can occur). Idempotency is
+   * the provider Message-ID via IntakeService (messages UNIQUE(shop_id,'email',submission_id)): a provider
+   * retry or a webhook/poll overlap of the same email collapses to one request; two distinct emails with
+   * identical bodies are two requests (no content-hash dedup). Enabled only when a router + intake sink are
+   * wired (the worker); otherwise inbound-create is off and this returns `unmatched`.
+   */
+  private async handleNewInbound(input: InboundEmail): Promise<InboundResult> {
+    if (!this.router || !this.intake) return 'unmatched';
+    const messageId = input.providerMessageId?.trim();
+    if (!messageId) return 'unmatched'; // no stable id → cannot de-dup safely; drop rather than risk a dup
+
+    const candidates = (input.toAddresses?.length ? input.toAddresses : [input.toAddress]).filter(
+      (a) => a && !/reply\+/.test(a), // the reply+ address is the resume channel, never an intake address
+    );
+    const shopIds = new Set<string>();
+    for (const addr of candidates) {
+      const sid = await this.router.resolveShopByInboundAddress(addr);
+      if (sid) shopIds.add(sid);
+    }
+    if (shopIds.size !== 1) return 'unmatched'; // unknown or ambiguous (0 or >1 shops) → safe ignore
+    const shopId = [...shopIds][0]!;
+
+    const body = normalizeBody(input.text, input.html).slice(0, MAX_INTAKE_CHARS);
+    if (!body) return 'unmatched'; // empty/whitespace email → nothing to extract
+
+    const res = await this.intake.submit({
+      shopId,
+      source: 'email',
+      submissionId: messageId,
+      content: body,
+      ...(input.from ? { customerEmail: input.from } : {}),
+    });
+    return res.duplicate ? 'duplicate' : 'accepted';
+  }
+
+  /** (B) Resume an existing request from a verified reply token. Enforces one round + Message-ID de-dup. */
+  private async resumeReply(shopId: string, requestId: string, input: InboundEmail): Promise<InboundResult> {
     return this.db.withTenant(shopId, async (c) => {
       // One round: only resume a request that actually asked and is still waiting. This runs under the
       // signed shop's tenant, so a token whose (shop, request) pair does not co-exist — e.g. an attempt
@@ -333,6 +414,38 @@ export class EmailService {
     const m = /reply\+([A-Za-z0-9_\-.]+)@/.exec(haystack);
     return m ? m[1]! : null;
   }
+}
+
+/**
+ * Choose the body text for a NEW inbound email (D25). Prefer the plain-text part; fall back to a crude
+ * HTML→text reduction only when there is no usable text part (HTML-only email). Deterministic; never
+ * executes or fetches anything. The caller size-bounds the result.
+ */
+export function normalizeBody(text: string, html?: string): string {
+  const t = (text ?? '').trim();
+  if (t) return t;
+  if (html) return htmlToText(html);
+  return '';
+}
+
+/** Minimal, dependency-free HTML→text: drop script/style, turn breaks into newlines, strip tags, decode
+ *  the common entities, collapse whitespace. Good enough to extract a repair description from HTML-only mail. */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, ' ')
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*(p|div|li|tr|h[1-6])\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Trim a plain-text reply to the new content (drop quoted history). Best-effort, deterministic. */

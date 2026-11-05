@@ -20,7 +20,17 @@ Scoped against the **actual** implementation (verified in code), not the README'
 - **Operations:** HA/multi-region, autoscaling the worker on queue depth, a managed-Redis path (there is no
   Redis — pg-boss is Postgres-backed by design).
 - **Resend production domain** (SPF/DKIM/MX) — email runs against a Resend-managed receiving address for the
-  MVP; arbitrary-recipient delivery needs a verified sending domain.
+  MVP; arbitrary-recipient delivery needs a verified sending domain. New-inbound routing is built (D25:
+  `shops.inbound_address` → shop), but the per-shop receiving addresses must be real verified addresses in
+  production; new-inbound de-dup relies on a stable RFC Message-ID.
+- **Rich email normalization.** New-inbound bodies use the plain-text part with a best-effort HTML→text
+  fallback; **attachments are skipped** (not parsed/stored), and DMARC/SPF results are fetched but not yet
+  gated on. Deep MIME/multipart edge cases are not handled beyond what Resend pre-splits.
+- **Fine-grained failure visibility.** Distinct states exist (`held_budget`, `invalid_output:…`,
+  `needs_review`), but transient causes **collapse at the DLQ boundary** — a timeout, a 503, and malformed
+  JSON all surface to staff as `processing attempts exhausted`. The staff portal also does not yet show the
+  retry-attempt count or remaining budget (only spend). (A genuine `429` is now retried, not parked —
+  D25; and `held_budget` requests are now re-driven automatically once the cap clears — D25.)
 
 ## B. What I'd build next (priority order)
 

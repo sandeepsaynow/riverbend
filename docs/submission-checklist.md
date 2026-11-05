@@ -1,13 +1,16 @@
 # Riverbend — Submission Checklist
 
-Verified 2026-11-04. Status: **PASS** (verified) · **PARTIAL** · **BLOCKED** (needs external access) · **FAIL**.
+Verified 2026-11-06. Status: **PASS** (verified) · **PARTIAL** · **BLOCKED** (needs external access) · **FAIL**.
 Commands run from `app/`. Docker required for tests/eval (real PostgreSQL via Testcontainers).
+Full requirement-by-requirement matrix: **`docs/FINAL_SUBMISSION_ACCEPTANCE.md`**. 2026-11-06 added new
+inbound-email intake (D25), a Cloud Run worker health listener, `429`≠budget, and `held_budget` auto-recovery
+(+24 tests → **220 passing**).
 
 ## Mandatory requirements
 
 | # | Requirement | Status | Evidence | Remaining limitations |
 |--:|---|---|---|---|
-| 1 | Git repo with code + meaningful tests | **PASS** | 52+ commits on `main`, pushed to `github.com/sandeepsaynow/riverbend`; `npx vitest run` → **196 passed** (27 files, real PostgreSQL) | — |
+| 1 | Git repo with code + meaningful tests | **PASS** | 52+ commits on `main`, pushed to `github.com/sandeepsaynow/riverbend`; `npx vitest run` → **220 passed** (27 files, real PostgreSQL) | — |
 | 2 | One-command local startup | **PASS** | `docker compose up --build` (or `make up`); `docker compose config -q` + local overlay both valid; stack boots healthy (`/readyz`→ready, api+worker+db) verified in earlier live runs | host `:5432` conflict → use the local overlay (documented) |
 | 3 | Working demonstration | **PASS** | Live: customer form → catalog-priced work order; admin/staff login; cross-shop isolation; real-OpenAI order ($110 / $65). Deterministic by default (FakeGateway) | in-browser click-through (T054) is a manual step; guide in `FINAL_MANUAL_TEST.md` |
 | 4 | Reproducible 40-message evaluation | **PASS** | `make eval` (deterministic) regenerated `docs/results.md` this run; `make eval-live` (real OpenAI) available | real-model **full-40 not re-run** this submission (paid/bulk → gated); real evidence in `results-live.md` |
@@ -23,7 +26,7 @@ Commands run from `app/`. Docker required for tests/eval (real PostgreSQL via Te
 |---|---|---|
 | Strict typecheck | **PASS** | `npm run typecheck` (clean) |
 | Module boundaries (lint) | **PASS** | `npm run lint` → dependency-cruiser, 0 violations (93 modules) |
-| Unit + integration tests | **PASS** | `npx vitest run` → **196 passed / 196** (27 files, real PostgreSQL) |
+| Unit + integration tests | **PASS** | `npx vitest run` → **220 passed / 196** (27 files, real PostgreSQL) |
 | Docker Compose config | **PASS** | `docker compose config -q` + `-f … -f docker-compose.local.yml --profile llm config -q` |
 | Terraform | **PASS** | `terraform fmt -check -recursive` + `terraform validate` → Success |
 | Secret scan (tracked + history) | **PASS** | `git grep` secret patterns across all history → no matches; only `.env.example` (placeholders); `.env` git-ignored & never committed; CI runs gitleaks |

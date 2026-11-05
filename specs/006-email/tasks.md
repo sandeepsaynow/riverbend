@@ -65,3 +65,15 @@ Original 006 (Mailpit) shipped under commit history; these tasks cover the Resen
       real received email, outbound send to delivered@resend.dev (200 + id). Documented in FINAL_MANUAL_TEST.md.
 - [ ] T082 Full real customer-reply resumption — BLOCKED-pending-user: requires replying from a real mailbox
       to a `reply+<token>@<RESEND_REPLY_DOMAIN>` address of a live awaiting request (steps in quickstart).
+
+## Phase 8 — New inbound email → new request (D25, 2026-11-06)
+- [x] T083 Migration `13000_shop_inbound_routing.cjs`: `shops.inbound_address` + case-insensitive unique index.
+- [x] T084 `ShopsService.setInboundAddress` / `resolveByInboundAddress`; `scripts/provision.ts` sets one
+      address per shop (`<slug>@$RESEND_INBOUND_DOMAIN`).
+- [x] T085 `EmailService.handleNewInbound` + `normalizeBody`/`htmlToText`; wired in the worker with a router
+      + IntakeService sink; API process stays reply-only.
+- [x] T086 Tests: `tests/integration/email-new-inbound.test.ts` (9) + `tests/unit/email-normalize.test.ts` (4)
+      — new request, provider-retry dedup, identical-body→two, unknown/ambiguous ignore, HTML-only, empty,
+      reply-still-resumes, event-drain path. Full suite 220 green.
+- [ ] T087 Live Resend new-inbound delivery to a real per-shop verified address — BLOCKED-pending verified
+      receiving domain (fixtures cover the invariants; see FINAL_MANUAL_TEST.md).

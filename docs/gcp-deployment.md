@@ -69,7 +69,10 @@ printf '%s' "$OPENAI_API_KEY" | gcloud secrets versions add openai-api-key --dat
 
 ## 10. Health & smoke tests
 `GET https://<domain>/readyz` → `{"status":"ready"}`; `GET /healthz` → 200; `GET /admin/login` → 200.
-litellm `/health/liveliness` is internal-only. Then run the browser/API smoke in `docs/FINAL_MANUAL_TEST.md`.
+litellm `/health/liveliness` is internal-only. The **worker** is a background queue consumer but Cloud Run
+runs it as a *service*, so it binds a minimal health listener on `$PORT` (D25): the Terraform worker service
+has an HTTP startup + liveness probe on `/healthz` (internal-only). Then run the browser/API smoke in
+`docs/FINAL_MANUAL_TEST.md`.
 
 ## 11. Logging & monitoring
 Cloud Run → Cloud Logging automatically (logs are **ids-only**, no PII/secrets — VII). Add log-based metrics

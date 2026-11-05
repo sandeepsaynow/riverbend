@@ -48,6 +48,19 @@ export class BudgetExceededError extends Error {
   }
 }
 
+/**
+ * The provider/proxy throttled the request (HTTP 429 WITHOUT a budget marker, D25). This is a genuine
+ * upstream rate-limit, not a budget cap, so it is TRANSIENT: the pipeline lets pg-boss retry with backoff
+ * rather than parking `held_budget`. Distinguished from BudgetExceededError so a throttle never masquerades
+ * as an exhausted budget. Carries no customer content (VII).
+ */
+export class RateLimitError extends Error {
+  constructor(message = 'provider rate-limited the request') {
+    super(message);
+    this.name = 'RateLimitError';
+  }
+}
+
 /** The global "AI paused" switch is on (D13/007). The pipeline parks `held_budget` (honest no-AI hold). */
 export class AiPausedError extends Error {
   constructor(message = 'AI processing is paused') {

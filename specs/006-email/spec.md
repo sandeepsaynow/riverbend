@@ -8,7 +8,14 @@
 > kept for provenance but is superseded. New/changed requirements are **FR-008…FR-014** at the end; see
 > `research.md`, `plan.md`, `data-model.md`, `contracts/resend-webhook.md`, `tasks.md`, `quickstart.md`.
 
-**Input**: D10 → **D21**. Outbound clarification questions and inbound reply resumption over email, via
+> **AMENDMENT 2026-11-06 (D25): new inbound email → new request.** Until now inbound handled only *replies*.
+> Now a brand-NEW email (no reply token) creates a new request, attributed to the shop that owns the
+> **verified destination address** (`shops.inbound_address`, migration `13000`), never the sender (FR-013).
+> Unknown/ambiguous recipients are safely ignored; idempotency is the provider Message-ID via IntakeService.
+> Reply-resume (US2) is unchanged and takes precedence when a `reply+<token>` address is present. New
+> requirements **FR-015…FR-017** below; see `data-model.md` (`shops.inbound_address`) and `tasks.md` Phase 8.
+
+**Input**: D10 → **D21** → **D25**. Outbound clarification questions and inbound reply resumption over email, via
 **Resend** (local dev uses Resend's managed receiving address + the `resend` CLI listener; the original
 Mailpit sink is retired). Email is a side effect owned by **code**, behind an `EmailTransport` port
 (Principle IV). Reuses the one-follow-up rule (I6) and the 003 reply-resumption path.
@@ -99,3 +106,14 @@ Mailpit sink is retired). Email is a side effect owned by **code**, behind an `E
   failed send → `needs_review`; signed inbound reply → correlated, quotes stripped, resumption enqueued;
   duplicate Message-ID → no-op; forged token → unmatched; reply to a non-waiting request → ignored;
   webhook rejects a bad signature (401) and accepts a signed one (200).
+
+## New requirements (D25, 2026-11-06)
+- **FR-015 New inbound → new request.** An inbound email with no valid reply token, addressed to a shop's
+  verified `inbound_address`, creates a new `source='email'` request for that shop and enters the normal
+  pipeline. Distinct from reply-resume (US2), which wins when a `reply+<token>` address is present.
+- **FR-016 Trusted routing.** Tenant is resolved ONLY from the verified destination address (DB map), never
+  the sender. Unknown or ambiguous (0 or >1 shops) recipients create nothing (safe ignore). An invalid/
+  expired reply token fails safe (never a new order).
+- **FR-017 Idempotency + normalization.** De-dup by provider Message-ID (`messages UNIQUE(shop_id,'email',
+  submission_id)`); two distinct emails with identical bodies are two requests. Body = plain-text, with a
+  best-effort HTML→text fallback; empty bodies dropped; attachments skipped.

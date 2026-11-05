@@ -10,11 +10,14 @@ import type { LlmGateway } from '../platform/llm/index.js';
 import { PipelineService } from '../modules/pipeline/index.js';
 import { LiteLlmAdmin, LiteLlmProvisioner } from '../modules/budget/litellm-admin.js';
 import { OrdersService } from '../modules/orders/index.js';
+import { IntakeService } from '../modules/intake/index.js';
+import { ShopsService } from '../modules/shops/index.js';
 import { EmailService } from '../modules/email/index.js';
+import { startHealthServer } from './health-server.js';
 import { InMemoryEmailTransport, ResendTransport, type EmailTransport } from '../modules/email/transport.js';
 import { ResendReceiving, type ReceivingClient, type ReceivingLister } from '../modules/email/receiving.js';
 import { processRequest } from './processor.js';
-import { handleExhausted, reconcileOnce } from './sweeper.js';
+import { handleExhausted, reconcileOnce, recoverHeldBudget } from './sweeper.js';
 
 /**
  * Worker process (active since 002; AI pipeline added in 003). Two stages: intake (received →
@@ -26,6 +29,11 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.LOG_LEVEL);
   const db = new Db({ appUrl: config.DATABASE_URL, adminUrl: config.DATABASE_ADMIN_URL });
+
+  // Cloud Run runs the worker as a *service*, whose startup/liveness probes need a listener on $PORT
+  // even though the worker serves no API (D25). Bind early so the probe passes; flip ready once wired.
+  let ready = false;
+  const healthServer = startHealthServer(config.PORT, () => ready);
 
   // Native budget mode: the proxy enforces per-shop team budgets and the worker provisions per-shop
   // virtual keys. In this mode the gateway carries NO default key — every inference MUST present a
@@ -55,6 +63,8 @@ async function main(): Promise<void> {
   logger.info({ gateway: baseGateway.name, paused: config.AI_PAUSED }, 'ai gateway selected (resilience wrapped)');
 
   const orders = new OrdersService(db);
+  const intake = new IntakeService(db);
+  const shops = new ShopsService(db);
 
   // Budget authority (2.0.0): in 'litellm' mode with a proxy + master key, provision a team/virtual key
   // per shop and let the proxy enforce. Otherwise (legacy, or offline fake) no provisioner is wired.
@@ -79,12 +89,21 @@ async function main(): Promise<void> {
   // inbound provider events. Off unless EMAIL_SIGNING_KEY is set; Resend transport + Receiving client
   // only when RESEND_API_KEY is set (else an in-memory no-op — keyless default + offline tests).
   const email = config.EMAIL_SIGNING_KEY
-    ? new EmailService(db, {
-        signingKey: config.EMAIL_SIGNING_KEY,
-        fromAddress: config.RESEND_FROM,
-        replyDomain: config.RESEND_REPLY_DOMAIN,
-        maxSendAttempts: config.EMAIL_MAX_SEND_ATTEMPTS,
-      })
+    ? new EmailService(
+        db,
+        {
+          signingKey: config.EMAIL_SIGNING_KEY,
+          fromAddress: config.RESEND_FROM,
+          replyDomain: config.RESEND_REPLY_DOMAIN,
+          maxSendAttempts: config.EMAIL_MAX_SEND_ATTEMPTS,
+        },
+        // New-inbound intake (D25): resolve a verified destination address → shop, then submit a new
+        // request. Only wired in the worker (where inbound is drained); the API process stays reply-only.
+        {
+          router: { resolveShopByInboundAddress: (addr) => shops.resolveByInboundAddress(addr) },
+          intake,
+        },
+      )
     : undefined;
   const mailTransport: EmailTransport = config.RESEND_API_KEY
     ? new ResendTransport(config.RESEND_API_KEY, config.RESEND_FROM)
@@ -121,6 +140,12 @@ async function main(): Promise<void> {
     reconcileOnce(db, queue).catch((err: unknown) =>
       logger.error({ err: err instanceof Error ? err.message : String(err) }, 'reconcile failed'),
     );
+    // Re-drive budget-held requests once the cooldown passes (D25) — skip while AI is deliberately paused.
+    if (!config.AI_PAUSED && config.HELD_BUDGET_RETRY_SECONDS > 0) {
+      recoverHeldBudget(db, config.HELD_BUDGET_RETRY_SECONDS)
+        .then((n) => { if (n > 0) logger.info({ count: n }, 'held_budget requests re-driven for recovery'); })
+        .catch((err: unknown) => logger.error({ err: err instanceof Error ? err.message : String(err) }, 'held_budget recovery failed'));
+    }
     if (email) {
       email.relayPending(mailTransport).catch((err: unknown) =>
         logger.error({ err: err instanceof Error ? err.message : String(err) }, 'email relay failed'),
@@ -154,10 +179,13 @@ async function main(): Promise<void> {
     logger.info({ intervalSeconds: config.RESEND_POLL_INTERVAL_SECONDS }, 'resend inbound polling enabled');
   }
 
+  ready = true; // queue + handlers wired → readiness probe can report ready
   logger.info('worker started: intake + ai-pipeline + dead-letter + reconciler (ids only)');
 
   const shutdown = async (): Promise<void> => {
+    ready = false;
     clearInterval(timer);
+    healthServer.close();
     await queue.stop();
     await db.close();
     process.exit(0);

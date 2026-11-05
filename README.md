@@ -24,7 +24,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
   0 failures**, 1 price answer, 2 needs-review, 1 idempotent replay; total order value **$1,865** (model
   spend $0 real / est. $0.074). Full report: [`docs/evaluation-results.md`](docs/evaluation-results.md).
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
-  (Docker required); **196 passing**.
+  (Docker required); **220 passing**.
 - **Submission docs:** [architecture note](docs/architecture.md) (2-page, Mermaid) ·
   [Not Built & scaling](docs/not-built.md) · [evaluation results](docs/evaluation-results.md) ·
   [GCP deployment](docs/gcp-deployment.md) (`infra/terraform/`) · [manual test walkthrough](docs/FINAL_MANUAL_TEST.md) ·
@@ -95,6 +95,13 @@ de-duplicate (Message-ID), and resume the pipeline:
 2. **Webhooks (optional, production — lower latency).** Set `RESEND_WEBHOOK_SECRET` + a dashboard webhook to
    `POST <public-url>/webhooks/resend` (Svix-verified). Pushes `email.received` immediately. May run
    alongside polling (Message-ID dedup → one effect).
+
+**New inbound email → new work order (D25).** A brand-new customer email (no reply token) creates a **new**
+request, attributed to the shop that owns the **verified destination address** — never the sender. The map
+is `shops.inbound_address`; `make provision` sets one address per shop (`<slug>@$RESEND_INBOUND_DOMAIN`, set
+`RESEND_INBOUND_DOMAIN` to your verified receiving domain in production). An email to an unknown or ambiguous
+recipient is safely ignored; duplicates collapse by Message-ID. This is distinct from a reply (above), which
+resumes an existing request. Covered by `tests/integration/email-new-inbound.test.ts`.
 
 This exercises the **real Resend provider API** (list + retrieve); it is provider-API integration testing,
 distinct from complete customer-email delivery (which needs a verified sending domain). See
@@ -216,8 +223,8 @@ reserve-then-settle **hard cap** for rollback or a shop that needs one. See [`do
 | 003 AI pipeline | strict extraction (I3), decide, one-question (I6), budget ledger | ✅ (FakeGateway + real OpenAI via proxy) |
 | 004 orders | one order/bike (I2), code pricing + snapshot (I5), staff reads | ✅ |
 | 005 web form | per-shop form, mandatory email, defences, status page | ✅ |
-| 006 email | outbound question, Svix-signed inbound webhook + content fetch, reply resumption, dedupe, delivery status | ✅ (Resend, D21) |
-| 007 resilience | circuit breaker, per-shop bulkhead, AI-paused switch | ✅ (core) |
+| 006 email | outbound question, inbound webhook/poll + content fetch, reply resumption, **new-inbound → new request by verified address (D25)**, dedupe, delivery status | ✅ (Resend, D21/D25) |
+| 007 resilience | per-call timeout, bounded pg-boss retry+DLQ, circuit breaker, per-shop bulkhead, AI-paused switch, **429≠budget + held_budget auto-recovery (D25)** | ✅ (core) |
 | 008 eval + deploy | 40-message eval + results.md; GCP Terraform (validated) | ✅ (deterministic eval + IaC; live eval + deploy gated) |
 
 ## Not built / deferred (honest scope, IX)

@@ -28,6 +28,10 @@ const ConfigSchema = z.object({
   QUEUE_EXPIRE_SECONDS: z.coerce.number().int().positive().default(120),
   // Reconciler poll interval (ms): outbox-delivery backstop + exhaustion → needs_review.
   RECONCILER_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  // Automatic recovery for requests parked at held_budget (D25): re-drive them via a fresh outbox row
+  // once they've sat this long, but only while AI is not paused. The pipeline re-checks the cap and
+  // either proceeds (budget reset/raised) or re-parks (no model spend on a denied admission). 0 disables.
+  HELD_BUDGET_RETRY_SECONDS: z.coerce.number().int().nonnegative().default(300),
   // Slice 003 AI pipeline. Default per-shop monthly AI cap (micros = millionths USD); $5 default.
   DEFAULT_SHOP_BUDGET_MICROS: z.coerce.number().int().nonnegative().default(5_000_000),
   // Estimated cost reserved per model call (micros). Settled to real cost after the call.

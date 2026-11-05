@@ -74,6 +74,28 @@ export class ShopsService {
     const res = await this.db.adminQuery<Shop>(`SELECT id, slug, time_zone, display_name, created_at FROM shops ORDER BY slug`);
     return res.rows;
   }
+
+  /**
+   * Set (or clear) a shop's trusted inbound-email address by slug (D25, admin/ops path). This is the
+   * ONLY source of truth for routing a brand-new inbound email to a tenant; it is never derived from the
+   * sender. The address is stored verbatim; uniqueness is enforced case-insensitively by the DB index.
+   */
+  async setInboundAddress(slug: string, address: string | null): Promise<void> {
+    await this.db.adminQuery(`UPDATE shops SET inbound_address = $2 WHERE slug = $1`, [slug.trim(), address?.trim() || null]);
+  }
+
+  /**
+   * Resolve the shop that owns a verified destination address (D25, cross-shop admin read — the tenant is
+   * not yet known). Case-insensitive. Returns null for an unknown address, so inbound to an unconfigured
+   * or unknown recipient is never attributed to a tenant.
+   */
+  async resolveByInboundAddress(address: string): Promise<string | null> {
+    const res = await this.db.adminQuery<{ id: string }>(
+      `SELECT id FROM shops WHERE lower(inbound_address) = lower($1)`,
+      [address.trim()],
+    );
+    return res.rows[0]?.id ?? null;
+  }
 }
 
 export class InvalidSlug extends Error {

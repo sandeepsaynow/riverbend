@@ -6,6 +6,13 @@ real-model path is documented and partially measured (see §Real-model).
 - `make eval`        → deterministic (recorded golden extraction → real code pipeline; free) → writes `docs/results.md`
 - `make eval-live`   → real OpenAI via the LiteLLM proxy (paid; measures tokens + LiteLLM-calculated cost)
 
+**Execution fidelity (honest scope).** The harness exercises the real `intake → (gateway) → validate →
+decide → catalog-price → order` services and real Postgres, but drives the pipeline **in-process** — it does
+not replay the `pg-boss` queue/worker hop (that path has its own integration tests). Email-channel samples
+are injected as intake, not delivered through a real inbox; the new inbound-email path (D25) is covered by
+`tests/integration/email-new-inbound.test.ts`, not by a live Resend delivery here. No claim of live inbox
+delivery or live-model results is made from this deterministic run.
+
 ## Run metadata (deterministic)
 
 | Field | Value |

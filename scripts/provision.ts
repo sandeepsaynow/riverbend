@@ -13,6 +13,9 @@ import { AuthService } from '../src/modules/auth/index.js';
 const SHOPS = ['rb-downtown', 'rb-northside', 'rb-lakeshore'];
 const SCOPES = ['intake:write', 'requests:read', 'orders:read', 'catalog:read', 'shop:read'];
 const ADMIN_URL = process.env.DATABASE_ADMIN_URL ?? 'postgres://app_admin:admin_pw@localhost:5432/riverbend';
+// Trusted inbound-email routing (D25): one receiving address per shop. For a real deployment set
+// RESEND_INBOUND_DOMAIN to your VERIFIED Resend receiving domain; locally a placeholder is fine.
+const INBOUND_DOMAIN = process.env.RESEND_INBOUND_DOMAIN ?? process.env.RESEND_REPLY_DOMAIN ?? 'inbound.localhost';
 
 async function main(): Promise<void> {
   const rotate = process.argv.includes('--rotate');
@@ -29,6 +32,11 @@ async function main(): Promise<void> {
       if (err instanceof ShopSlugTaken) console.log(`  ${slug}: shop exists (reused)`);
       else throw err;
     }
+    // Set the shop's trusted inbound address (D25). A new email to this address creates a new request
+    // for THIS shop; the sender is never used for routing. Idempotent (overwrites to the same value).
+    const inbound = `${slug}@${INBOUND_DOMAIN}`;
+    await shops.setInboundAddress(slug, inbound);
+    console.log(`  ${slug}: inbound address → ${inbound}`);
     const existing = (await auth.listShopCredentials(slug)).filter((c) => c.kind === 'shop' && c.status === 'active');
     if (existing.length > 0 && !rotate) {
       console.log(`  ${slug}: active key already present (prefix ${existing[0]!.prefix}…) — NOT rotating. Use \`make provision ROTATE=1\` to replace.\n`);

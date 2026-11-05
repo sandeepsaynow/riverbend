@@ -83,6 +83,26 @@ resource "google_cloud_run_v2_service" "worker" {
     containers {
       image   = var.image_worker
       command = ["npm", "run", "start:worker"]
+      # The worker is a background queue consumer, but Cloud Run runs it as a *service*, so it must accept
+      # the startup/liveness probe on the port. The worker binds a minimal health listener on $PORT (D25);
+      # 8080 matches Cloud Run's injected PORT. Without this the revision never turns healthy.
+      ports {
+        container_port = 8080
+      }
+      startup_probe {
+        http_get {
+          path = "/healthz"
+        }
+        initial_delay_seconds = 5
+        period_seconds        = 10
+        failure_threshold     = 6
+      }
+      liveness_probe {
+        http_get {
+          path = "/healthz"
+        }
+        period_seconds = 30
+      }
       resources {
         cpu_idle = false # always-allocated CPU: the worker polls the queue between requests
       }

@@ -11,7 +11,7 @@ proxy in front of OpenAI. Two processes from one image: **api** and **worker**. 
 ```mermaid
 flowchart LR
   Cust[Customer] -->|web form /f/:shop| API
-  Cust -->|email reply| ResendIn[Resend receiving]
+  Cust -->|email: new or reply| ResendIn[Resend receiving]
   Staff[Staff/Admin] -->|/admin /staff pages| API
   subgraph App[One image, two processes]
     API[Express API<br/>intake · portal · webhook · docs]
@@ -29,6 +29,9 @@ flowchart LR
 
 Only components present in the repo are shown. **pg-boss** uses Postgres as the job store (no broker).
 Inbound email is **polling by default** (Resend Receiving API; no public URL) with an optional Svix webhook.
+A **new** email becomes a new request, routed to a shop by its **verified destination address**
+(`shops.inbound_address`, never the sender); a **reply** (a signed `reply+<token>` address) resumes the
+existing request. Both are deduped by provider Message-ID and flow the same durable intake path.
 
 ## B. Module boundaries (who owns what)
 
@@ -50,14 +53,16 @@ Inbound email is **polling by default** (Resend Receiving API; no public URL) wi
 `work_orders` → `work_order_items` (priced from `catalog_service`). `follow_ups` (≤1 per request, the one
 clarification). Tenancy: `shop_membership` (Better-Auth user → shop + role) and Feature-009 API-key
 credentials. Idempotency: `messages UNIQUE(shop_id, source, submission_id)`. Email: `email_outbox`
-(one/request), `inbound_emails` (Message-ID dedup), `email_events` + `email_poll_state` (provider ingestion).
+(one/request), `inbound_emails` (Message-ID dedup), `email_events` + `email_poll_state` (provider ingestion);
+`shops.inbound_address` maps a verified receiving address → shop for new-email routing.
 Budget/accounting: `shop_budgets`, `llm_calls`. Better Auth: `user/session/account/verification` (global).
 `auth_bootstrap` (single-use first-admin marker). Every shop-owned table has a `shop_id` and **forced RLS**.
 
 ## D. Tenant isolation (defence in depth)
 
 1. **Identity:** `/v1` authenticates by a hashed shop API key → the shop id; the portal authenticates by a
-   Better-Auth session → `shop_membership` → the shop id. A client-supplied `shop_id` is never trusted.
+   Better-Auth session → `shop_membership` → the shop id. A client-supplied `shop_id` is never trusted, and an
+   inbound email's tenant is its **verified destination address**, never the (spoofable) sender.
 2. **Forced RLS:** every shop-owned table has `FORCE ROW LEVEL SECURITY` + a tenant policy; the runtime role
    `app_user` is `NOBYPASSRLS`. Each request runs inside `set_config('app.tenant_id', <shop>)` via
    `withTenant`, so even a bug cannot read another shop's rows. A readiness policy-check asserts any table
