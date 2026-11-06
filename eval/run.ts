@@ -16,6 +16,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 import { startTestDb, stopTestDb } from '../tests/helpers/db.js';
 import { CatalogService } from '../src/modules/catalog/index.js';
 import { IntakeService, type SubmitInput } from '../src/modules/intake/index.js';
@@ -112,6 +113,10 @@ async function main(): Promise<void> {
   // Live mode: provision one LiteLLM team + restricted virtual key per shop (never the master key for
   // inference), and run the pipeline under BUDGET_AUTHORITY=litellm against the real proxy.
   let livePipe: PipelineService | null = null;
+  let liveGw: LiteLlmGateway | null = null;
+  // Per-shop LiteLLM identity (real team_id + virtual-key fingerprint) — proves tenant isolation at the
+  // proxy, not a cosmetic shop label in the report. Keyed by slug.
+  const tenantId = new Map<string, { teamId: string; keyLast4: string }>();
   if (mode === 'live') {
     const base = process.env.EVAL_LLM_BASE_URL ?? process.env.LLM_BASE_URL;
     const master = process.env.LITELLM_MASTER_KEY ?? process.env.LLM_MASTER_KEY;
@@ -123,10 +128,12 @@ async function main(): Promise<void> {
     const stamp = Date.now();
     for (const [slug, id] of shopIds) {
       const team = await admin.createTeam(`eval:${slug}:${stamp}`, 5, '30d');
-      shopKey.set(id, await admin.createVirtualKey(team, `eval:${slug}:${stamp}`));
+      const key = await admin.createVirtualKey(team, `eval:${slug}:${stamp}`);
+      shopKey.set(id, key);
+      tenantId.set(slug, { teamId: team, keyLast4: key.slice(-4) }); // last-4 only; never the secret (VII)
     }
-    const gw = new LiteLlmGateway({ baseUrl: base, model: process.env.LLM_MODEL, maxOutputTokens: 800, timeoutMs: 30_000 });
-    livePipe = new PipelineService(t.db, gw, {
+    liveGw = new LiteLlmGateway({ baseUrl: base, model: process.env.LLM_MODEL, maxOutputTokens: 800, timeoutMs: 30_000 });
+    livePipe = new PipelineService(t.db, liveGw, {
       defaultBudgetMicros: 5_000_000, estimateMicros: 2_000, period: PERIOD,
       budgetAuthority: 'litellm', resolveKey: async (sid) => shopKey.get(sid)!,
     });
@@ -190,11 +197,30 @@ async function main(): Promise<void> {
     }
   }
 
-  writeResults(mode, rows, cumulativeMicros);
+  let commit = 'unknown';
+  try { commit = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim(); } catch { /* not a git checkout */ }
+  const meta: RunMeta = {
+    timestamp: new Date().toISOString(),
+    commit,
+    alias: process.env.LLM_MODEL ?? '—',
+    backingModel: liveGw?.lastBackingModel,
+    schemaVersion: 'riverbend_extraction/json_schema-strict-v1',
+    tenants: tenantId,
+  };
+  writeResults(mode, rows, cumulativeMicros, meta);
   await stopTestDb(t);
 }
 
-function writeResults(mode: string, rows: Row[], cumulativeMicros: number): void {
+interface RunMeta {
+  timestamp: string;
+  commit: string;
+  alias: string;
+  backingModel: string | undefined;
+  schemaVersion: string;
+  tenants: Map<string, { teamId: string; keyLast4: string }>;
+}
+
+function writeResults(mode: string, rows: Row[], cumulativeMicros: number, meta?: RunMeta): void {
   const by = (o: string): number => rows.filter((r) => r.outcome.startsWith(o)).length;
   const orderValue = rows.reduce((s, r) => s + r.totalCents, 0);
   const aiCost = rows.reduce((s, r) => s + r.costMicros, 0);
@@ -222,6 +248,58 @@ function writeResults(mode: string, rows: Row[], cumulativeMicros: number): void
   lines.push(`- ordered (work order): **${by('ordered')}** · answered (price): **${by('answered')}** · awaiting_customer (one question): **${by('awaiting_customer')}** · needs_review: **${by('needs_review')}** · held_budget: **${by('held_budget')}** · duplicate: **${by('duplicate')}** · NOT RUN: **${by('NOT RUN')}**`);
   lines.push(`- total work-order value: **${usd(orderValue)}** · AI spend (${mode === 'recorded' ? 'estimate' : 'LiteLLM-calculated'}): **${aiCost} micros (${usdMicros(aiCost)})**`);
   if (mode === 'live') lines.push(`- **actual cumulative model spend: ${cumulativeMicros} micros (${usdMicros(cumulativeMicros)})** — guard $${(SPEND_GUARD_MICROS / 1e6).toFixed(2)}, proxy aggregate cap $15.`);
+  lines.push('');
+
+  if (mode === 'live' && meta) {
+    lines.push('## Run metadata');
+    lines.push('');
+    lines.push('| Field | Value |');
+    lines.push('|---|---|');
+    lines.push(`| Run timestamp (UTC) | ${meta.timestamp} |`);
+    lines.push(`| Git commit | \`${meta.commit}\` |`);
+    lines.push(`| LiteLLM alias | \`${meta.alias}\` |`);
+    lines.push(`| Backing model snapshot | **\`${meta.backingModel ?? 'unknown'}\`** (from \`x-litellm-model-name\`) |`);
+    lines.push(`| Prompt / schema version | \`${meta.schemaVersion}\` |`);
+    lines.push(`| Provider | OpenAI via LiteLLM proxy (\`BUDGET_AUTHORITY=litellm\`) |`);
+    lines.push('');
+  }
+
+  // Per-tenant accounting (Phase 2): aggregate the per-message rows by shop and attach the REAL LiteLLM
+  // identity (team_id + virtual-key fingerprint) provisioned for that shop. Costs sum to the run total.
+  const shops = [...new Set(rows.map((r) => r.shop))].sort();
+  const outcomeIs = (r: Row, o: string): boolean => r.outcome.startsWith(o);
+  lines.push('## Per-tenant cost accounting');
+  lines.push('');
+  if (mode === 'live' && meta) {
+    lines.push('Per-shop LiteLLM identities actually used this run (not just report labels):');
+    lines.push('');
+    lines.push('| Shop | LiteLLM team_id | virtual key (…last4) |');
+    lines.push('|---|---|---|');
+    for (const s of shops) {
+      const id = meta.tenants.get(s);
+      lines.push(`| ${s} | \`${id?.teamId ?? '—'}\` | \`…${id?.keyLast4 ?? '—'}\` |`);
+    }
+    lines.push('');
+  }
+  lines.push('| Shop | Messages | Model calls | Input tok | Output tok | Total tok | Measured cost | Orders | Follow-ups | Reviews | Failures |');
+  lines.push('|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|');
+  let tM = 0, tCalls = 0, tIn = 0, tOut = 0, tCost = 0, tOrd = 0, tFu = 0, tRev = 0, tFail = 0;
+  for (const s of shops) {
+    const rs = rows.filter((r) => r.shop === s);
+    const calls = rs.filter((r) => r.promptTokens !== undefined).length;
+    const inTok = rs.reduce((a, r) => a + (r.promptTokens ?? 0), 0);
+    const outTok = rs.reduce((a, r) => a + (r.completionTokens ?? 0), 0);
+    const cost = rs.reduce((a, r) => a + r.costMicros, 0);
+    const ord = rs.filter((r) => outcomeIs(r, 'ordered')).length;
+    const fu = rs.filter((r) => outcomeIs(r, 'awaiting_customer')).length;
+    const rev = rs.filter((r) => outcomeIs(r, 'needs_review')).length;
+    const fail = rs.filter((r) => outcomeIs(r, 'failed') || outcomeIs(r, 'invalid_output')).length;
+    tM += rs.length; tCalls += calls; tIn += inTok; tOut += outTok; tCost += cost; tOrd += ord; tFu += fu; tRev += rev; tFail += fail;
+    lines.push(`| ${s} | ${rs.length} | ${calls} | ${inTok} | ${outTok} | ${inTok + outTok} | ${cost} µ (${usdMicros(cost)}) | ${ord} | ${fu} | ${rev} | ${fail} |`);
+  }
+  lines.push(`| **TOTAL** | **${tM}** | **${tCalls}** | **${tIn}** | **${tOut}** | **${tIn + tOut}** | **${tCost} µ (${usdMicros(tCost)})** | **${tOrd}** | **${tFu}** | **${tRev}** | **${tFail}** |`);
+  lines.push('');
+  lines.push(`Reconciliation: per-tenant cost sums to **${tCost} micros** = run total **${aiCost} micros** ${tCost === aiCost ? '✓ (exact)' : `(Δ ${aiCost - tCost} µ)`}. Requests that never call the model (idempotent duplicates, pre-model guard routes) carry zero model cost by construction.`);
   lines.push('');
   lines.push('## Per-message');
   lines.push('');
@@ -280,11 +358,21 @@ function writeResults(mode: string, rows: Row[], cumulativeMicros: number): void
   lines.push('');
   const outDir = resolve(process.cwd(), 'docs');
   mkdirSync(outDir, { recursive: true });
-  // Live results go to a SEPARATE file so the deterministic recorded run is never overwritten (Phase 4.12).
-  const file = mode === 'live' ? 'results-live.md' : 'results.md';
-  writeFileSync(resolve(outDir, file), lines.join('\n') + '\n');
-  // eslint-disable-next-line no-console
-  console.log(`wrote docs/${file} (${rows.length} messages, mode=${mode})`);
+  const body = lines.join('\n') + '\n';
+  if (mode === 'live') {
+    // Live results go to a SEPARATE file so the deterministic recorded run is never overwritten (Phase 4.12),
+    // plus a MODEL-SPECIFIC dated report so each model's run is preserved as independent evidence.
+    const fam = (meta?.backingModel ?? '').replace(/^openai\//, '').replace(/-\d{4}-\d{2}-\d{2}$/, '') || 'live';
+    const specific = `results-live-${fam}.md`;
+    writeFileSync(resolve(outDir, 'results-live.md'), body);   // latest-live pointer
+    writeFileSync(resolve(outDir, specific), body);            // per-model historical evidence
+    // eslint-disable-next-line no-console
+    console.log(`wrote docs/results-live.md and docs/${specific} (${rows.length} messages, mode=live)`);
+  } else {
+    writeFileSync(resolve(outDir, 'results.md'), body);
+    // eslint-disable-next-line no-console
+    console.log(`wrote docs/results.md (${rows.length} messages, mode=recorded)`);
+  }
 }
 
 main().catch((e: unknown) => {

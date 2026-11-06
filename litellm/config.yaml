@@ -5,7 +5,11 @@
 model_list:
   - model_name: riverbend-extraction        # production: logical alias → backing OpenAI model
     litellm_params:
-      model: openai/gpt-4o-mini
+      # Upgraded 2026-11-06 (D26) gpt-4o-mini → gpt-5.4-mini snapshot. Verified: LiteLLM 1.106.6 has
+      # price metadata ($0.75/1M in, $4.50/1M out) so x-litellm-response-cost stays accurate, and
+      # json_schema strict structured output works. ROLLBACK: swap the next line back to
+      # `openai/gpt-4o-mini` and restart the proxy — the alias, env, and app code are unchanged.
+      model: openai/gpt-5.4-mini-2026-03-17
       api_key: os.environ/OPENAI_API_KEY     # read from the proxy's env — value never stored here
 
   - model_name: mock-extract                 # testing: a MOCK upstream with configured pricing, so

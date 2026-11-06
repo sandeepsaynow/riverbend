@@ -653,3 +653,33 @@ provider `429` was misclassified as budget-exhausted (parked instead of retried)
 relies on a stable RFC Message-ID. **Tests:** +24 (`tests/integration/email-new-inbound.test.ts`,
 `held-budget-recovery.test.ts`; `tests/unit/{email-normalize,worker-health,gateway-error-classify}.test.ts`)
 → **220 passing**. **Door:** two-way (one additive column + reused states/paths). See `specs/006-email/`.
+
+## D26 — Production model upgrade gpt-4o-mini → gpt-5.4-mini (config-only, parameter-compatible)
+
+**Date:** 2026-11-06. **Context:** the production extraction model was `openai/gpt-4o-mini`. We upgraded the
+backing model behind the stable LiteLLM alias `riverbend-extraction` to the OpenAI snapshot
+**`openai/gpt-5.4-mini-2026-03-17`**.
+
+**What changed (minimal surface):**
+- `litellm/config.yaml` — alias `riverbend-extraction` now routes to `openai/gpt-5.4-mini-2026-03-17`. The
+  alias, `LLM_MODEL`, env, and worker code are unchanged, so **rollback is a one-line config edit** + proxy
+  restart. LiteLLM 1.106.6 ships price metadata for the snapshot ($0.75/1M in, $4.50/1M out), so
+  `x-litellm-response-cost` stays accurate.
+- `src/platform/llm/litellm-gateway.ts` — send `max_completion_tokens` instead of the legacy `max_tokens`.
+  **Verified by a pre-upgrade provider smoke test:** the GPT-5 family **rejects** `max_tokens` with HTTP 400,
+  while `max_completion_tokens` + `temperature:0` + strict `json_schema` all work; gpt-4o-mini also accepts the
+  new name, so the single param is correct for both models (rollback-safe). The gateway also now captures the
+  backing-model snapshot from the `x-litellm-model-name` response header (real provenance for reports).
+
+**Why not more:** extraction prompt, schema, catalog, decision, and pricing are unchanged — the upgrade is a
+model swap, not a behavior change. No business rule was touched.
+
+**Verification (measured, 2026-11-06):** a full live 40-message eval on the new model — 38 real calls, 33
+ordered / 3 follow-ups / 2 reviews / 1 answered / 1 duplicate / **0 failures / 0 schema-validation failures**,
+per-tenant cost reconciled **exactly** to LiteLLM's own team spend logs (distinct team UUID per shop), run cost
+**$0.0307**, cumulative $0.036 (under the $20 cap). All deterministic guards held (wrong-shop, injection,
+delegation, bike-count, cancellation). gpt-5.4-mini is comparable-or-more-cautious than gpt-4o-mini (asked 3
+clarifications where gpt-4o ordered; m-1021 correctly). **Reports:** `docs/results-live-gpt-5.4-mini.md`,
+`docs/MODEL_COST_REPORT.md`, `docs/TEST_RESULTS.md`. **Tests:** +2 (`tests/unit/gateway-request.test.ts` pins
+`max_completion_tokens` + strict schema + backing-model capture) → **222 passing**. **Door:** two-way (config
+rollback). See `specs/003-ai-extraction/` (AI pipeline spec).

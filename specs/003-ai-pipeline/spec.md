@@ -3,6 +3,14 @@
 **Feature Branch**: `003-ai-pipeline`
 **Created**: 2026-11-03
 **Status**: Draft
+
+> **AMENDMENT 2026-11-06 (D26): production model upgrade.** The backing extraction model behind the LiteLLM
+> alias `riverbend-extraction` was upgraded `openai/gpt-4o-mini` → **`openai/gpt-5.4-mini-2026-03-17`**. The
+> GPT-5 family requires `max_completion_tokens` (rejects the legacy `max_tokens`), so the gateway was changed
+> accordingly (`src/platform/llm/litellm-gateway.ts`; verified by provider smoke test + `tests/unit/gateway-request.test.ts`).
+> Prompt, JSON schema, decision, catalog and pricing are **unchanged** — this is a model swap, not a behavior
+> change. Rollback is a one-line edit in `litellm/config.yaml`. Measured live run, per-tenant cost accounting and
+> quality comparison: `docs/results-live-gpt-5.4-mini.md`, `docs/MODEL_COST_REPORT.md`. See decision **D26**.
 **Input**: Slice 003 (D5, D6, D7) — the AI reads a message into a strict, schema-validated form; code
 validates, decides, asks at most one follow-up and resumes on reply; every model call is recorded and
 its cost reserved then settled against a per-shop monthly cap. The model interprets; **code owns every

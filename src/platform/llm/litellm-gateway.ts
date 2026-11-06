@@ -101,6 +101,8 @@ export class LiteLlmGateway implements LlmGateway {
   lastUsage: LlmUsage | undefined;
   /** Proxy-calculated cost of the most recent call in whole micros (from x-litellm-response-cost). */
   lastCostMicros: number | undefined;
+  /** Backing provider model the proxy routed to (from x-litellm-model-name) — real snapshot provenance. */
+  lastBackingModel: string | undefined;
 
   constructor(
     private readonly config: LiteLlmConfig,
@@ -137,7 +139,10 @@ export class LiteLlmGateway implements LlmGateway {
         body: JSON.stringify({
           model: this.config.model,
           temperature: 0,
-          max_tokens: this.config.maxOutputTokens ?? 1024,
+          // `max_completion_tokens` is the canonical OpenAI ceiling. The GPT-5 family (e.g.
+          // gpt-5.4-mini) REJECTS the legacy `max_tokens` with HTTP 400; gpt-4o-mini accepts the new
+          // name too, so this single param is correct for both and keeps model rollback config-only.
+          max_completion_tokens: this.config.maxOutputTokens ?? 1024,
           response_format: responseFormat(allowed),
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
@@ -176,6 +181,8 @@ export class LiteLlmGateway implements LlmGateway {
     const costHeader = res.headers.get('x-litellm-response-cost');
     const costUsd = costHeader !== null ? Number(costHeader) : NaN;
     this.lastCostMicros = Number.isFinite(costUsd) && costUsd >= 0 ? Math.round(costUsd * 1e6) : undefined;
+    // Real backing-model provenance (the alias resolves to e.g. openai/gpt-5.4-mini-2026-03-17).
+    this.lastBackingModel = res.headers.get('x-litellm-model-name') ?? this.lastBackingModel;
 
     let body: {
       model?: string;

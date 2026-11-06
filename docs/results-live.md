@@ -9,54 +9,84 @@
 
 ## Summary
 
-- ordered (work order): **36** · answered (price): **1** · awaiting_customer (one question): **0** · needs_review: **2** · held_budget: **0** · duplicate: **1** · NOT RUN: **0**
-- total work-order value: **$2014.00** · AI spend (LiteLLM-calculated): **5183 micros ($0.0052)**
-- **actual cumulative model spend: 5183 micros ($0.0052)** — guard $1.00, proxy aggregate cap $15.
+- ordered (work order): **33** · answered (price): **1** · awaiting_customer (one question): **3** · needs_review: **2** · held_budget: **0** · duplicate: **1** · NOT RUN: **0**
+- total work-order value: **$1841.00** · AI spend (LiteLLM-calculated): **30692 micros ($0.0307)**
+- **actual cumulative model spend: 30692 micros ($0.0307)** — guard $1.00, proxy aggregate cap $15.
+
+## Run metadata
+
+| Field | Value |
+|---|---|
+| Run timestamp (UTC) | 2026-11-06T02:33:02.818Z |
+| Git commit | `15788c0` |
+| LiteLLM alias | `riverbend-extraction` |
+| Backing model snapshot | **`openai/gpt-5.4-mini-2026-03-17`** (from `x-litellm-model-name`) |
+| Prompt / schema version | `riverbend_extraction/json_schema-strict-v1` |
+| Provider | OpenAI via LiteLLM proxy (`BUDGET_AUTHORITY=litellm`) |
+
+## Per-tenant cost accounting
+
+Per-shop LiteLLM identities actually used this run (not just report labels):
+
+| Shop | LiteLLM team_id | virtual key (…last4) |
+|---|---|---|
+| rb-downtown | `321c9cdb-5e73-402e-9f1c-e6de4ff5e1e7` | `…PC-g` |
+| rb-lakeshore | `e1894e0a-462d-40a3-b0cf-3817c852f165` | `…j93g` |
+| rb-northside | `9d9bb701-af59-476e-9d38-5aabfeca8ce8` | `…8Pjg` |
+
+| Shop | Messages | Model calls | Input tok | Output tok | Total tok | Measured cost | Orders | Follow-ups | Reviews | Failures |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| rb-downtown | 14 | 13 | 8853 | 821 | 9674 | 10335 µ ($0.0103) | 10 | 2 | 1 | 0 |
+| rb-lakeshore | 13 | 12 | 8156 | 783 | 8939 | 9641 µ ($0.0096) | 10 | 1 | 1 | 0 |
+| rb-northside | 13 | 13 | 8843 | 907 | 9750 | 10716 µ ($0.0107) | 13 | 0 | 0 | 0 |
+| **TOTAL** | **40** | **38** | **25852** | **2511** | **28363** | **30692 µ ($0.0307)** | **33** | **3** | **2** | **0** |
+
+Reconciliation: per-tenant cost sums to **30692 micros** = run total **30692 micros** ✓ (exact). Requests that never call the model (idempotent duplicates, pre-model guard routes) carry zero model cost by construction.
 
 ## Per-message
 
 | # | message_id | shop | ch | outcome | services | order total | model | in/out tok | AI cost (micros) | ms |
 |--:|---|---|---|---|---|--:|---|---|--:|--:|
-| 1 | m-1001 | rb-downtown | email | ordered | TUNE_BASIC×1 | $65.00 | riverbend-extraction | 696/47 | 133 | 1657 |
-| 2 | m-1002 | rb-northside | web | ordered | FLAT_FIX×1 | $15.00 | riverbend-extraction | 687/52 | 134 | 1229 |
-| 3 | m-1003 | rb-lakeshore | email | ordered | CHAIN_REPLACE×1 | $45.00 | riverbend-extraction | 686/60 | 139 | 1429 |
-| 4 | m-1004 | rb-downtown | web | ordered | BRAKE_PADS×1 | $35.00 | riverbend-extraction | 687/61 | 140 | 2771 |
-| 5 | m-1005 | rb-northside | email | ordered | BRAKE_ADJUST×1, GEAR_ADJUST×1 | $43.00 | riverbend-extraction | 684/64 | 141 | 1607 |
-| 6 | m-1006 | rb-lakeshore | web | ordered | WHEEL_TRUE×1 | $30.00 | riverbend-extraction | 691/61 | 140 | 1871 |
-| 7 | m-1007 | rb-downtown | email | ordered | TUNE_FULL×1 | $185.00 | riverbend-extraction | 690/45 | 131 | 1310 |
-| 8 | m-1008 | rb-northside | web | ordered | EBIKE_DIAG×1 | $60.00 | riverbend-extraction | 685/58 | 138 | 1269 |
-| 9 | m-1009 | rb-downtown | email | needs_review | — | — | — | — | — | 11 |
-| 10 | m-1010 | rb-lakeshore | web | ordered | CHAIN_REPLACE×1 | $45.00 | riverbend-extraction | 680/66 | 142 | 1546 |
-| 11 | m-1011 | rb-downtown | web | ordered | BRAKE_BLEED×1 | $40.00 | riverbend-extraction | 688/62 | 140 | 1631 |
-| 12 | m-1012 | rb-northside | email | ordered | GENERAL_INSPECT×1 | $25.00 | riverbend-extraction | 688/62 | 140 | 1503 |
-| 13 | m-1013 | rb-lakeshore | web | ordered | TIRE_REPLACE×1 | $20.00 | riverbend-extraction | 683/62 | 140 | 1538 |
+| 1 | m-1001 | rb-downtown | email | ordered | TUNE_BASIC×1 | $65.00 | riverbend-extraction | 692/68 | 825 | 1575 |
+| 2 | m-1002 | rb-northside | web | ordered | FLAT_FIX×1 | $15.00 | riverbend-extraction | 683/72 | 836 | 1533 |
+| 3 | m-1003 | rb-lakeshore | email | ordered | GEAR_ADJUST×1 | $25.00 | riverbend-extraction | 682/71 | 831 | 1872 |
+| 4 | m-1004 | rb-downtown | web | ordered | BRAKE_PADS×1 | $35.00 | riverbend-extraction | 683/70 | 827 | 1486 |
+| 5 | m-1005 | rb-northside | email | ordered | BRAKE_ADJUST×1, GEAR_ADJUST×1 | $43.00 | riverbend-extraction | 680/74 | 843 | 1506 |
+| 6 | m-1006 | rb-lakeshore | web | ordered | WHEEL_TRUE×1 | $30.00 | riverbend-extraction | 687/72 | 839 | 1342 |
+| 7 | m-1007 | rb-downtown | email | ordered | TUNE_FULL×1 | $185.00 | riverbend-extraction | 686/61 | 789 | 977 |
+| 8 | m-1008 | rb-northside | web | ordered | EBIKE_DIAG×1 | $60.00 | riverbend-extraction | 681/68 | 817 | 1265 |
+| 9 | m-1009 | rb-downtown | email | needs_review | — | — | — | — | — | 8 |
+| 10 | m-1010 | rb-lakeshore | web | ordered | CHAIN_REPLACE×1 | $45.00 | riverbend-extraction | 676/63 | 791 | 1441 |
+| 11 | m-1011 | rb-downtown | web | ordered | BRAKE_BLEED×1 | $40.00 | riverbend-extraction | 684/74 | 846 | 1126 |
+| 12 | m-1012 | rb-northside | email | ordered | GENERAL_INSPECT×1 | $25.00 | riverbend-extraction | 684/64 | 801 | 960 |
+| 13 | m-1013 | rb-lakeshore | web | ordered | FLAT_FIX×1, TIRE_REPLACE×1 | $35.00 | riverbend-extraction | 679/76 | 851 | 1088 |
 | 14 | m-1003 | rb-lakeshore | email | duplicate (idempotent replay) | — | — | — | — | — | 2 |
-| 15 | m-1015 | rb-downtown | web | ordered | TUNE_BASIC×1 | $65.00 | riverbend-extraction | 676/45 | 128 | 1122 |
-| 16 | m-1016 | rb-northside | web | ordered | GEAR_ADJUST×1 | $25.00 | riverbend-extraction | 681/58 | 137 | 1420 |
-| 17 | m-1017 | rb-lakeshore | email | ordered | BRAKE_ADJUST×2 | $36.00 | riverbend-extraction | 688/62 | 140 | 1647 |
-| 18 | m-1018 | rb-downtown | email | answered | — | — | riverbend-extraction | 682/26 | 118 | 979 |
-| 19 | m-1019 | rb-northside | web | ordered | BRAKE_ADJUST×1 | $18.00 | riverbend-extraction | 684/58 | 137 | 1252 |
-| 20 | m-1020 | rb-lakeshore | web | ordered | GENERAL_INSPECT×1 | $25.00 | riverbend-extraction | 680/57 | 136 | 1140 |
-| 21 | m-1021 | rb-downtown | email | ordered | TIRE_REPLACE×2 | $40.00 | riverbend-extraction | 686/57 | 137 | 1558 |
-| 22 | m-1022 | rb-northside | web | ordered | EBIKE_DIAG×1 | $60.00 | riverbend-extraction | 683/61 | 139 | 1831 |
-| 23 | m-1023 | rb-lakeshore | email | ordered | TUNE_BASIC×1, WHEEL_TRUE×1 | $95.00 | riverbend-extraction | 685/52 | 134 | 1371 |
-| 24 | m-1024 | rb-downtown | web | ordered | CHAIN_REPLACE×1 | $45.00 | riverbend-extraction | 694/64 | 143 | 1713 |
-| 25 | m-1025 | rb-northside | email | ordered | GENERAL_INSPECT×1 | $25.00 | riverbend-extraction | 694/63 | 142 | 1462 |
-| 26 | m-1026 | rb-lakeshore | web | ordered | GEAR_ADJUST×1 | $25.00 | riverbend-extraction | 674/69 | 143 | 1498 |
-| 27 | m-1027 | rb-downtown | web | ordered | BRAKE_ADJUST×2 | $36.00 | riverbend-extraction | 671/55 | 134 | 1736 |
-| 28 | m-1028 | rb-northside | email | ordered | GEAR_ADJUST×1 | $25.00 | riverbend-extraction | 687/60 | 139 | 1443 |
-| 29 | m-1029 | rb-lakeshore | email | ordered | BRAKE_BLEED×2, BRAKE_PADS×2 | $150.00 | riverbend-extraction | 683/67 | 143 | 1431 |
-| 30 | m-1030 | rb-downtown | web | ordered | FLAT_FIX×1 | $15.00 | riverbend-extraction | 674/50 | 131 | 1211 |
-| 31 | m-1031 | rb-northside | web | ordered | WHEEL_TRUE×2 | $60.00 | riverbend-extraction | 680/50 | 132 | 1454 |
-| 32 | m-1032 | rb-lakeshore | email | ordered | TUNE_BASIC×1 | $65.00 | riverbend-extraction | 683/45 | 129 | 1124 |
-| 33 | m-1033 | rb-downtown | email | ordered | BRAKE_ADJUST×2, CHAIN_REPLACE×1 | $81.00 | riverbend-extraction | 693/67 | 144 | 1652 |
-| 34 | m-1034 | rb-northside | web | ordered | CHAIN_REPLACE×1 | $45.00 | riverbend-extraction | 681/54 | 135 | 1326 |
-| 35 | m-1035 | rb-lakeshore | web | ordered | TIRE_REPLACE×2 | $40.00 | riverbend-extraction | 683/54 | 135 | 1215 |
-| 36 | m-1036 | rb-downtown | email | ordered | EBIKE_DIAG×1 | $60.00 | riverbend-extraction | 682/54 | 135 | 1439 |
-| 37 | m-1037 | rb-northside | web | ordered | BRAKE_BLEED×1 | $40.00 | riverbend-extraction | 679/57 | 136 | 1362 |
-| 38 | m-1038 | rb-lakeshore | email | needs_review | — | — | riverbend-extraction | 688/25 | 118 | 861 |
-| 39 | m-1039 | rb-downtown | web | ordered | FLAT_FIX×1, TUNE_FULL×1 | $200.00 | riverbend-extraction | 686/61 | 139 | 1274 |
-| 40 | m-1040 | rb-northside | email | ordered | TUNE_BASIC×1, TUNE_BASIC×1 | $130.00 | riverbend-extraction | 682/65 | 141 | 1513 |
+| 15 | m-1015 | rb-downtown | web | ordered | TUNE_BASIC×1 | $65.00 | riverbend-extraction | 672/59 | 770 | 986 |
+| 16 | m-1016 | rb-northside | web | ordered | GEAR_ADJUST×1 | $25.00 | riverbend-extraction | 677/66 | 805 | 1059 |
+| 17 | m-1017 | rb-lakeshore | email | awaiting_customer | — | — | riverbend-extraction | 684/67 | 815 | 1183 |
+| 18 | m-1018 | rb-downtown | email | answered | — | — | riverbend-extraction | 678/35 | 666 | 1012 |
+| 19 | m-1019 | rb-northside | web | ordered | BRAKE_ADJUST×1 | $18.00 | riverbend-extraction | 680/67 | 812 | 1080 |
+| 20 | m-1020 | rb-lakeshore | web | ordered | GENERAL_INSPECT×1 | $25.00 | riverbend-extraction | 676/64 | 795 | 1076 |
+| 21 | m-1021 | rb-downtown | email | awaiting_customer | — | — | riverbend-extraction | 682/67 | 813 | 1192 |
+| 22 | m-1022 | rb-northside | web | ordered | EBIKE_DIAG×1 | $60.00 | riverbend-extraction | 679/70 | 824 | 960 |
+| 23 | m-1023 | rb-lakeshore | email | ordered | TUNE_BASIC×1, WHEEL_TRUE×1 | $95.00 | riverbend-extraction | 681/70 | 826 | 1073 |
+| 24 | m-1024 | rb-downtown | web | ordered | CHAIN_REPLACE×1 | $45.00 | riverbend-extraction | 690/58 | 779 | 1123 |
+| 25 | m-1025 | rb-northside | email | ordered | GENERAL_INSPECT×1 | $25.00 | riverbend-extraction | 690/68 | 824 | 1147 |
+| 26 | m-1026 | rb-lakeshore | web | ordered | GEAR_ADJUST×1 | $25.00 | riverbend-extraction | 670/62 | 782 | 979 |
+| 27 | m-1027 | rb-downtown | web | ordered | GENERAL_INSPECT×1 | $25.00 | riverbend-extraction | 667/59 | 766 | 901 |
+| 28 | m-1028 | rb-northside | email | ordered | GEAR_ADJUST×1 | $25.00 | riverbend-extraction | 683/73 | 841 | 1170 |
+| 29 | m-1029 | rb-lakeshore | email | ordered | BRAKE_BLEED×2, BRAKE_PADS×2 | $150.00 | riverbend-extraction | 679/76 | 851 | 1152 |
+| 30 | m-1030 | rb-downtown | web | ordered | FLAT_FIX×1 | $15.00 | riverbend-extraction | 670/59 | 768 | 1051 |
+| 31 | m-1031 | rb-northside | web | ordered | WHEEL_TRUE×2 | $60.00 | riverbend-extraction | 676/67 | 809 | 997 |
+| 32 | m-1032 | rb-lakeshore | email | ordered | TUNE_BASIC×1 | $65.00 | riverbend-extraction | 679/58 | 770 | 1003 |
+| 33 | m-1033 | rb-downtown | email | awaiting_customer | — | — | riverbend-extraction | 689/75 | 854 | 1031 |
+| 34 | m-1034 | rb-northside | web | ordered | CHAIN_REPLACE×1 | $45.00 | riverbend-extraction | 677/67 | 809 | 1175 |
+| 35 | m-1035 | rb-lakeshore | web | ordered | TIRE_REPLACE×2 | $40.00 | riverbend-extraction | 679/70 | 824 | 1302 |
+| 36 | m-1036 | rb-downtown | email | ordered | EBIKE_DIAG×1 | $60.00 | riverbend-extraction | 678/67 | 810 | 1052 |
+| 37 | m-1037 | rb-northside | web | ordered | BRAKE_BLEED×1 | $40.00 | riverbend-extraction | 675/69 | 817 | 1071 |
+| 38 | m-1038 | rb-lakeshore | email | needs_review | — | — | riverbend-extraction | 684/34 | 666 | 816 |
+| 39 | m-1039 | rb-downtown | web | ordered | FLAT_FIX×1, TUNE_FULL×1 | $200.00 | riverbend-extraction | 682/69 | 822 | 948 |
+| 40 | m-1040 | rb-northside | email | ordered | TUNE_BASIC×1, TUNE_BASIC×1 | $130.00 | riverbend-extraction | 678/82 | 878 | 1135 |
 
 ## Tricky cases — ACTUAL real-model outcomes (honest; may differ from golden)
 

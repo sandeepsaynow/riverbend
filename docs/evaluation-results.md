@@ -99,15 +99,31 @@ the model; `—` where no call happens (short-circuited business outcomes). Full
 (Tricky-case notes — prompt injection, idempotent resend, wrong-shop, price inquiry, delegation,
 cancellation, Spanish, ambiguous — are in `docs/results.md §Tricky cases`.)
 
-## Real-model (OpenAI via LiteLLM) — LIVE RUN MEASURED
+## Current production model: gpt-5.4-mini (D26, upgraded 2026-11-06)
 
-**This is a real run, executed 2026-11-06 against OpenAI through the LiteLLM proxy. Numbers are read
+The backing model was upgraded `openai/gpt-4o-mini` → **`openai/gpt-5.4-mini-2026-03-17`** (alias
+`riverbend-extraction` unchanged; config-only rollback preserved). Full measured live run, per-tenant cost
+accounting (reconciled against LiteLLM's own team spend logs), and a side-by-side quality/cost comparison are in
+**[`docs/results-live-gpt-5.4-mini.md`](results-live-gpt-5.4-mini.md)** and **[`docs/MODEL_COST_REPORT.md`](MODEL_COST_REPORT.md)**.
+
+**gpt-5.4-mini live run (2026-11-06):** 40 messages · 38 real calls · **33 ordered / 3 follow-ups / 2 reviews /
+1 answered / 1 duplicate / 0 failures** (reconciles to 40) · 28 363 tokens (25 852/2 511) · **measured spend
+$0.0307** (30 692 micros; per-tenant sum = run total, exact) · $1 841 order value. Per shop: rb-downtown
+$0.0103, rb-lakeshore $0.0096, rb-northside $0.0107 — each on its own LiteLLM team UUID (verified against
+`/spend/logs`). All deterministic guards held (wrong-shop, injection, delegation, bike-count, cancellation).
+
+The gpt-4o-mini run below is **preserved unchanged as historical evidence** (and in
+[`docs/results-live-gpt-4o-mini.md`](results-live-gpt-4o-mini.md)).
+
+## Historical real-model run — gpt-4o-mini (2026-11-06, superseded by D26)
+
+**A real run executed 2026-11-06 against OpenAI through the LiteLLM proxy. Numbers are read
 back from the DB and from LiteLLM's own accounting — nothing here is estimated or synthesized.**
 
 | Field | Value |
 |---|---|
 | Evaluation date | **2026-11-06** |
-| Model ID (backing) | **`openai/gpt-4o-mini`** |
+| Model ID (backing) | **`openai/gpt-4o-mini`** (superseded — see current model above) |
 | Provider / proxy | OpenAI via LiteLLM proxy (per-shop virtual keys, `BUDGET_AUTHORITY=litellm`) |
 | LiteLLM alias | **`riverbend-extraction`** |
 | Messages processed | **40** |

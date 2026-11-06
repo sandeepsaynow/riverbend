@@ -19,13 +19,12 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
 - **Demo mode is deterministic** — with no API keys the AI uses an offline `FakeGateway` (no cost, no
   network); real OpenAI/Resend activate only when their keys are set (see Environment below). We do **not**
   fake real email/LLM.
-- **Evaluate the 40 sample messages:** `make eval` (deterministic) → writes `docs/results.md`; real-model
-  `make eval-live` → `docs/results-live.md`. **Live run (2026-11-06, real `openai/gpt-4o-mini`):** 40 messages,
-  38 real OpenAI calls → **36 work orders, 0 follow-ups, 0 failures**, 1 price answer, 2 needs-review,
-  1 idempotent replay; order value **$2,014**; **measured spend $0.0052** (LiteLLM `/global/spend` corroborates;
-  well under the $20 cap). Deterministic run: 32/4/0, $1,865 (est. $0.074, labelled). On ambiguous messages the
-  live model extracts where the deterministic run asks a question, so the deterministic run stays authoritative
-  for regression. Full report: [`docs/evaluation-results.md`](docs/evaluation-results.md).
+- **Evaluate the 40 sample messages:** `make eval` (deterministic) → `docs/results.md`; real-model
+  `make eval-live` → `docs/results-live.md` + a per-model report. **Production model: `openai/gpt-5.4-mini-2026-03-17`**
+  (D26). **Live run (2026-11-06):** 40 messages, 38 real calls → **33 work orders, 3 follow-ups, 0 failures**,
+  1 price answer, 2 needs-review, 1 duplicate; order value **$1,841**; **measured spend $0.0307** (per-tenant cost
+  reconciles exactly to LiteLLM's own team logs; cumulative $0.036, well under the $20 cap). See
+  **[TESTING & EVALUATION](#testing--evaluation)** below.
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
   (Docker required); **220 passing**.
 - **Submission docs:** [architecture note](docs/architecture.md) (2-page, Mermaid) ·
@@ -118,6 +117,42 @@ make eval-live   # same, through the real provider (gated; costs money; keep spe
 ```
 
 [`docs/results.md`](docs/results.md) is a real run read back from the database (not fabricated).
+
+## TESTING & EVALUATION
+
+One place for the test evidence, the live model evaluation, and the measured spend. All numbers below are from
+real runs on **2026-11-06** (commit of record: the D26 upgrade commit).
+
+**Reports & sources**
+- [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md) — full test evidence (env, commands, per-category results, failure-injection).
+- [`docs/MODEL_COST_REPORT.md`](docs/MODEL_COST_REPORT.md) — per-shop cost, overall spend reconciliation, model quality/cost comparison.
+- [`docs/evaluation-results.md`](docs/evaluation-results.md) — evaluation overview (deterministic + live).
+- Live model reports: [`docs/results-live-gpt-5.4-mini.md`](docs/results-live-gpt-5.4-mini.md) (current) · [`docs/results-live-gpt-4o-mini.md`](docs/results-live-gpt-4o-mini.md) (historical).
+- Test sources: [`tests/unit/`](tests/unit/) · [`tests/integration/`](tests/integration/) · [`tests/contract/`](tests/contract/). Failure-injection: [`tests/unit/gateway-error-classify.test.ts`](tests/unit/gateway-error-classify.test.ts), [`tests/integration/held-budget-recovery.test.ts`](tests/integration/held-budget-recovery.test.ts), [`tests/unit/resilient-gateway.test.ts`](tests/unit/resilient-gateway.test.ts).
+
+**Model**
+- Selected: **`openai/gpt-5.4-mini-2026-03-17`** (LiteLLM alias `riverbend-extraction`). Config-only rollback to `openai/gpt-4o-mini` in `litellm/config.yaml`.
+
+**Test summary (measured)**
+
+| Check | Result |
+|---|--:|
+| Full suite (`npx vitest run`, real Postgres) | **222 / 222 passed** (35 files, 0 skipped) |
+| Typecheck · Lint · Compose · Terraform | all **PASS** |
+| Live eval failures | **0 / 40** |
+
+**Per-tenant spend — gpt-5.4-mini live run (reconciled to LiteLLM team logs)**
+
+| Shop | Msgs | Calls | Tokens | Measured cost |
+|---|--:|--:|--:|--:|
+| rb-downtown | 14 | 13 | 9 674 | $0.0103 |
+| rb-northside | 13 | 13 | 9 750 | $0.0107 |
+| rb-lakeshore | 13 | 12 | 8 939 | $0.0096 |
+| **Total** | **40** | **38** | **28 363** | **$0.0307** |
+
+- **Total live evaluation cost:** $0.0307 · **cumulative measured spend (this proxy):** $0.036 · **real model calls:** 38 · under the **$20** cap.
+- **Commands:** `npx vitest run` · `npm run typecheck` · `npm run lint` · `docker compose --profile llm up -d db litellm && EVAL_LLM_BASE_URL=http://localhost:4000/v1 make eval-live`.
+- **Known limitations:** live GCP apply and a verified Resend sending domain are gated (not run); budget is a disclosed soft cap; in-browser click-through is manual. See [`docs/not-built.md`](docs/not-built.md).
 
 ### Staff portal — human login (010)
 
@@ -232,9 +267,9 @@ reserve-then-settle **hard cap** for rollback or a shop that needs one. See [`do
 
 ## Not built / deferred (honest scope, IX)
 
-- ~~**Live 40-message eval + real provider cost report**~~ — **DONE 2026-11-06** (real `openai/gpt-4o-mini`
-  via LiteLLM; 38 real calls; measured spend **$0.0052**). Results in `docs/results-live.md`; run it yourself
-  with `docker compose --profile llm up -d db litellm && EVAL_LLM_BASE_URL=http://localhost:4000/v1 make eval-live`.
+- ~~**Live 40-message eval + real provider cost report**~~ — **DONE 2026-11-06** on **`openai/gpt-5.4-mini-2026-03-17`**
+  (D26; also run on gpt-4o-mini, preserved as historical); 38 real calls; measured spend **$0.0307**, per-tenant
+  reconciled. See the [TESTING & EVALUATION](#testing--evaluation) section and `docs/MODEL_COST_REPORT.md`.
 - **LiteLLM-native budget as sole authority** — per-shop team/virtual-key provisioning + the
   concurrency-atomicity acceptance test; deferred because it cannot be validated without paid
   budget-exhaustion calls (legacy ledger remains authoritative).
