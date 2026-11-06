@@ -111,6 +111,23 @@ is `shops.inbound_address`; `make provision` sets one address per shop (`<slug>@
 recipient is safely ignored; duplicates collapse by Message-ID. This is distinct from a reply (above), which
 resumes an existing request. Covered by `tests/integration/email-new-inbound.test.ts`.
 
+**Receiving addresses + email test (D30, verified live 2026-11-06).** Shops are provisioned on the managed
+Resend receiving domain, so customers email **any sender → the shop address**:
+
+| Shop | Receiving address |
+|---|---|
+| rb-downtown | `rb-downtown@karoiechou.resend.app` |
+| rb-northside | `rb-northside@karoiechou.resend.app` |
+| rb-lakeshore | `rb-lakeshore@karoiechou.resend.app` |
+
+Set them with `RESEND_INBOUND_DOMAIN=karoiechou.resend.app make provision` (any local-part on that managed
+domain routes to the account; routing uses the **recipient address only**, never the email body/sender). A
+real Gmail → Resend → poll → **gpt-5.4-mini** email was processed end-to-end into a `FLAT_FIX + CHAIN_REPLACE`
+($60) work order. **Reply safety (D30):** automated replies to `no-reply@`/`mailer-daemon@`/`postmaster@`/
+list senders are suppressed (parked `needs_review`) to avoid bounce loops; replies stay ≤1 per request.
+**Only one environment should poll** the shared Resend inbox at a time (`RESEND_POLLING_ENABLED=false` on the
+other). To send a test email you need a verified Resend sending domain (sandbox only sends to the account owner).
+
 This exercises the **real Resend provider API** (list + retrieve); it is provider-API integration testing,
 distinct from complete customer-email delivery (which needs a verified sending domain). See
 `specs/006-email/quickstart.md`.

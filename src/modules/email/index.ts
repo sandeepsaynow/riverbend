@@ -94,6 +94,13 @@ export class EmailService {
         await c.query(`UPDATE requests SET state='needs_review', last_error='no_reply_path', updated_at=now() WHERE id=$1`, [requestId]);
         return 'no_reply_path';
       }
+      // Reply-safety (D30, FR-020): never auto-reply to a no-reply/bounce/system/list sender — it would
+      // bounce or loop. Park for a human instead of emailing the question. The one-round guard + outbox
+      // UNIQUE(request_id) already bound replies to at most one per request.
+      if (isNoReplyOrAuto(row.email)) {
+        await c.query(`UPDATE requests SET state='needs_review', last_error='auto_reply_suppressed', updated_at=now() WHERE id=$1`, [requestId]);
+        return 'no_reply_path';
+      }
       const subject = 'A quick question about your bike repair';
       const body = `${row.question}\n\nJust reply to this email and we'll take it from there.`;
       const html = `<p>${escapeHtml(row.question)}</p><p>Just reply to this email and we'll take it from there.</p>`;
@@ -414,6 +421,21 @@ export class EmailService {
     const m = /reply\+([A-Za-z0-9_\-.]+)@/.exec(haystack);
     return m ? m[1]! : null;
   }
+}
+
+/**
+ * Reply-safety (D30, FR-020). True when an address must NOT receive an automated reply: a no-reply mailbox,
+ * a bounce/system sender, or a role address that commonly fronts a mailing list or auto-responder — replying
+ * there bounces or starts a mail loop. Deterministic, match on the bare address's local-part with word
+ * boundaries (so a real customer like `bouncer@…` is not caught, but `no-reply@`, `mailer-daemon@`,
+ * `postmaster@`, `bounces@` are). A missing/empty sender is treated as unsafe (fail-closed → human review).
+ */
+export function isNoReplyOrAuto(address: string | null | undefined): boolean {
+  if (!address || !address.trim()) return true;
+  const a = address.trim().toLowerCase();
+  const local = a.includes('@') ? a.slice(0, a.indexOf('@')) : a;
+  // token with a separator boundary (^ . _ - +) on each side
+  return /(^|[._+-])(no-?reply|do-?not-?reply|mailer-daemon|mailerdaemon|postmaster|bounce|bounces|daemon|auto-?reply|notifications?|listserv|majordomo)([._+-]|$)/.test(local);
 }
 
 /**

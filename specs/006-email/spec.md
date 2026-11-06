@@ -117,3 +117,26 @@ Mailpit sink is retired). Email is a side effect owned by **code**, behind an `E
 - **FR-017 Idempotency + normalization.** De-dup by provider Message-ID (`messages UNIQUE(shop_id,'email',
   submission_id)`); two distinct emails with identical bodies are two requests. Body = plain-text, with a
   best-effort HTML→text fallback; empty bodies dropped; attachments skipped.
+
+## New requirements (D30, 2026-11-06) — any-sender intake + reply safety
+
+> **AMENDMENT 2026-11-06 (D30): verified live.** Shops are provisioned with real receiving addresses on the
+> managed Resend domain `karoiechou.resend.app`; a real customer email (Gmail → Resend → poll → gpt-5.4-mini)
+> was processed end-to-end into a `FLAT_FIX + CHAIN_REPLACE` work order. Routing is by the **trusted recipient
+> address only** (never the body — the test email said "to Downtown" but that text is not used for routing).
+
+- **FR-018 Any sender.** An email from ANY sender address is accepted; the sender (`from`) is recorded only as
+  the reply path, never used for routing or authorization (FR-013 reaffirmed). Routing is the verified
+  recipient address → `shops.inbound_address` (unique, case-insensitive).
+- **FR-019 Receiving addresses.** Each shop has a distinct address on the account's managed receiving domain,
+  e.g. `rb-downtown@karoiechou.resend.app`, `rb-northside@…`, `rb-lakeshore@…`. Provision with
+  `RESEND_INBOUND_DOMAIN` (falls back to `RESEND_REPLY_DOMAIN`).
+- **FR-020 Reply safety (no loops).** Before sending any automated reply (clarification/answer), the recipient
+  is checked by `isNoReplyOrAuto`: a no-reply / bounce / system / mailing-list sender (`no-reply@`,
+  `mailer-daemon@`, `postmaster@`, `bounces@`, `notifications@`, `listserv@`, …) or an empty sender → the reply
+  is **suppressed** and the request is parked `needs_review` (`auto_reply_suppressed`), never emailed. Replies
+  remain bounded to at most one per request (one-round guard + `email_outbox UNIQUE(request_id)`), which also
+  prevents mail loops. Header-based auto-detection (`Auto-Submitted`, `List-*`, `Precedence: bulk`) is a
+  documented future enhancement; the sender-address guard covers the common loop/bounce vectors today.
+- **FR-021 Single poller.** The Resend receiving inbox is account-wide, so only ONE environment should poll it
+  (local and GCP share the account). For a controlled test, disable the other (`RESEND_POLLING_ENABLED=false`).
