@@ -73,6 +73,25 @@ Cloud Run services `rb-api`, `rb-worker` (worker+litellm sidecar), `rb-litellm` 
 
 **Summary: 7 PASS · 1 PARTIAL (E) · 1 NOT VERIFIED (H).**
 
+## 6a. Update 2026-11-06 (D28) — public browser access, staff flow, deploy automation
+
+- **Public access enabled + verified.** `allUsers → roles/run.invoker` on `rb-api` (the IAM approach the auth
+  guard allows, vs the blocked `--allow-unauthenticated` flag). Verified with **no credentials** (incognito-
+  equivalent): `/readyz`, `/f/<shop>`, `/admin/login` → **200**; `/admin/init` → **401**, `/v1/orders` → **401**,
+  `/staff` → **302**. Public Cloud Run invoker does **not** bypass app authorization.
+- **Admin → staff → isolation (live, full chain).** Admin portal login (session + CSRF double-submit + origin
+  allowlist) → created a `SHOP_STAFF` for rb-downtown → staff login → `/staff/orders` shows **only** downtown's
+  `TUNE_BASIC $65`, **not** northside's `FLAT_FIX`; forcing `?shop=<northside>` still returns 0 cross-tenant rows
+  (authorized-selector + RLS). Role allow-list rejects platform-admin escalation (code + live).
+- **Bootstrap is single-use (verified live):** with the real token after the first admin → **409
+  `already_initialized`**; wrong token → **401**.
+- **Deploy automation (`make gcp-*`)** implemented in `scripts/gcp/` and run live: `gcp-check` (account/
+  billing/tools/sizing) and `gcp-test` (the public smoke above) pass against staging; `gcp-deploy`/
+  `gcp-bootstrap-admin`/`gcp-destroy` encode the proven steps idempotently. See
+  `docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`.
+- **Canonical origin:** CSRF/cookies bind to `WEB_ALLOWED_ORIGINS` = `https://rb-api-101573607751.us-central1.run.app`
+  (use that URL, or a custom domain in prod); the `*-rralynv5pq-*` alias serves the same service for GETs.
+
 ## 7. Bugs discovered and fixed during deployment
 
 1. **Worker crash — missing `ADMIN_BOOTSTRAP_TOKEN`.** The shared config schema requires it; the Terraform

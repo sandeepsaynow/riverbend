@@ -6,3 +6,6 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+
+# GCP deploy secret inputs (generated/filled locally, never committed)
+scripts/gcp/deploy.*.env

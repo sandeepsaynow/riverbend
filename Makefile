@@ -1,4 +1,4 @@
-.PHONY: up down migrate test typecheck lint logs eval eval-live provision
+.PHONY: up down migrate test typecheck lint logs eval eval-live provision gcp-check gcp-deploy gcp-bootstrap-admin gcp-test gcp-destroy
 
 # One-command local run (FR-012): start Postgres + api; the api migrates before serving (FR-022).
 up:
@@ -42,3 +42,16 @@ eval-live:
 # `make provision` leaves existing active keys alone; `make provision ROTATE=1` issues replacements.
 provision:
 	npx tsx scripts/provision.ts $(if $(ROTATE),--rotate,)
+
+# --- GCP deploy automation (D28). ENV=staging|prod GCP_PROJECT=<id>. Secrets in scripts/gcp/deploy.<ENV>.env ---
+GCP := bash scripts/gcp/riverbend-gcp.sh
+gcp-check:
+	$(GCP) check
+gcp-deploy:
+	$(GCP) deploy
+gcp-bootstrap-admin:
+	$(GCP) bootstrap-admin
+gcp-test:
+	$(GCP) test
+gcp-destroy:
+	$(GCP) destroy
