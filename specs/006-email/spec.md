@@ -198,3 +198,27 @@ Mailpit sink is retired). Email is a side effect owned by **code**, behind an `E
 - **FR-030 Established tenant is sticky.** Email conversations retain the shop confirmed at resolution;
   web/api conversations retain their origin. A later shop mention never changes ownership. Idempotency,
   pg-boss, catalog pricing, per-shop LiteLLM budgets, bounded retries and duplicate protection are preserved.
+
+## New requirements (D34, 2026-11-06) — LLM-based pre-tenant shop routing (code-validated)
+
+> **AMENDMENT 2026-11-06 (D34).** The generic-address shop resolution (D32) is now LLM-first: GPT-5.4 mini
+> extracts the intended shop with confidence/ambiguity, so contextual preference is understood. The LLM only
+> PROPOSES; deterministic code validates and assigns the tenant. Real-model eval: 6/6 on representative cases
+> (incl. "live Downtown but want Northside" → Northside, and an injection → unknown), ~$0.00025/call.
+
+- **FR-031 LLM router (proposal only).** A new generic-address email is classified by GPT-5.4 mini under a
+  strict JSON schema `{intended_shop ∈ configured-slugs|"unknown", confidence, ambiguous}` (bounded output
+  tokens, per-call timeout, one transient retry). Honours contextual preference (want-vs-live/ride).
+- **FR-032 Code assigns the tenant.** The resolver accepts the model's slug ONLY if it is a configured shop,
+  non-ambiguous and `confidence ≥ LLM_ROUTING_MIN_CONFIDENCE` (default 0.6); it maps slug→id in code. The LLM
+  never sets `tenant_id`. An unconfigured/injected slug is rejected by validation.
+- **FR-033 Graceful degradation.** Ambiguous → pending-intake (never guess). Unknown / low-confidence → fall
+  back to the deterministic D32 regex. LLM timeout / invalid schema / over-budget → regex fallback (fail-safe),
+  then pending if still unresolved. No crash, no dropped email.
+- **FR-034 Capped pre-tenant budget + abuse bound.** Routing uses a SEPARATE LiteLLM team/key with its own
+  tight cap (`LITELLM_ROUTING_BUDGET_USD`, default $2); over budget fails closed → regex. Each email routes at
+  most once (Message-ID de-dup via messages/pending). `LLM_ROUTING_ENABLED=false` → regex-only, no pre-tenant
+  calls. No cross-tenant data is sent to the model (only the three shop slugs).
+- **FR-035 Ownership immutable.** After a shop is assigned (LLM or regex or clarification reply), subsequent
+  replies retain it; web/api origin remains permanent (D32). Exactly-once work-order effects, RLS, pg-boss,
+  catalog pricing, no-reply/loop protection all preserved.

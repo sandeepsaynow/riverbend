@@ -115,8 +115,11 @@ tenant**, decided once at intake (the pipeline never re-routes):
 
 - **One generic address:** customers email a single public address, e.g. **`sandeepsudhagani@karoiechou.resend.app`**
   (`RESEND_INBOUND_DOMAIN=karoiechou.resend.app`). It maps to no shop; the shop is resolved from the message.
-- **Email → shop from content:** "flat tire repaired at **Northside**" → Northside. Resolved deterministically
-  (regex vs the three shops), validated in code; **exactly one** named shop routes.
+- **Email → shop from content (D34, LLM-routed):** GPT-5.4 mini extracts the intended shop + confidence (so
+  "I live **Downtown** but want **Northside**" → Northside); **code validates** the slug against the three shops
+  and assigns the tenant — the LLM never sets `tenant_id`. A **separate, tightly-capped** routing key bounds
+  pre-tenant spend ($2 cap; `LLM_ROUTING_ENABLED=false` → regex-only); over-budget/timeout/low-confidence
+  **falls back to the deterministic regex**. Real-model eval: 6/6 on representative cases, ~$0.00025/call.
 - **Missing / ambiguous / contradictory shop → pending-intake:** the email is held in the system
   `pending_inbound_email` table (no `shop_id`, no RLS weakened — no LLM runs pre-tenant), a worker sends **one**
   reply-safe shop-clarification, and the customer's reply resolves the shop → the order is then created from the

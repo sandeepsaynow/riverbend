@@ -9,6 +9,7 @@ import { ResilientGateway } from '../platform/llm/resilient-gateway.js';
 import type { LlmGateway } from '../platform/llm/index.js';
 import { PipelineService } from '../modules/pipeline/index.js';
 import { LiteLlmAdmin, LiteLlmProvisioner } from '../modules/budget/litellm-admin.js';
+import { LiteLlmShopRoutingClassifier, LlmShopResolver } from '../modules/email/shop-router-llm.js';
 import { OrdersService } from '../modules/orders/index.js';
 import { IntakeService } from '../modules/intake/index.js';
 import { ShopsService } from '../modules/shops/index.js';
@@ -78,6 +79,28 @@ async function main(): Promise<void> {
     logger.info({ budgetAuthority: config.BUDGET_AUTHORITY, provisioner: false }, 'budget enforcement');
   }
 
+  // D34: pre-tenant shop routing. Default = deterministic D32 regex. When LLM routing is enabled and a proxy
+  // is configured, route via GPT-5.4 mini on a SEPARATE, tightly-capped routing key (fail-closed over budget
+  // → regex fallback). Code validates the slug and assigns the tenant; the LLM never assigns tenant_id.
+  let routeByContent: (text: string) => Promise<string[]> = (text) => shops.resolveShopByContent(text);
+  if (config.LLM_ROUTING_ENABLED && nativeBudget && config.LLM_MODEL) {
+    try {
+      const radmin = new LiteLlmAdmin({ baseUrl: config.LLM_BASE_URL!, masterKey: config.LLM_MASTER_KEY! });
+      const team = await radmin.createTeam(`routing:${Date.now()}`, config.LITELLM_ROUTING_BUDGET_USD, config.LITELLM_BUDGET_DURATION);
+      const routingKey = await radmin.createVirtualKey(team, 'routing:pre-tenant');
+      const classifier = new LiteLlmShopRoutingClassifier({ baseUrl: config.LLM_BASE_URL!, model: config.LLM_MODEL, apiKey: routingKey, timeoutMs: config.LLM_TIMEOUT_MS, maxRetries: 1 });
+      const resolver = new LlmShopResolver(
+        classifier,
+        { listShops: () => shops.listShops().then((r) => r.map((s) => ({ id: s.id, slug: s.slug }))), resolveShopByContent: (txt) => shops.resolveShopByContent(txt) },
+        { minConfidence: config.LLM_ROUTING_MIN_CONFIDENCE },
+      );
+      routeByContent = (text) => resolver.resolve(text);
+      logger.info({ budgetUsd: config.LITELLM_ROUTING_BUDGET_USD, minConfidence: config.LLM_ROUTING_MIN_CONFIDENCE }, 'LLM shop routing enabled (capped pre-tenant key; regex fallback)');
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, 'LLM routing provisioning failed; using deterministic regex routing');
+    }
+  }
+
   const pipeline = new PipelineService(db, gateway, {
     defaultBudgetMicros: config.DEFAULT_SHOP_BUDGET_MICROS,
     estimateMicros: config.LLM_ESTIMATE_MICROS,
@@ -102,7 +125,7 @@ async function main(): Promise<void> {
         {
           router: {
             resolveShopByInboundAddress: (addr) => shops.resolveByInboundAddress(addr),
-            resolveShopByContent: (text) => shops.resolveShopByContent(text), // D31 generic-address routing
+            resolveShopByContent: (text) => routeByContent(text), // D34 LLM routing (regex fallback)
           },
           intake,
         },

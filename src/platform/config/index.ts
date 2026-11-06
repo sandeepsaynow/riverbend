@@ -50,6 +50,11 @@ const ConfigSchema = z.object({
   LLM_MASTER_KEY: z.string().optional(),
   LITELLM_TEAM_BUDGET_USD: z.coerce.number().positive().default(5),
   LITELLM_BUDGET_DURATION: z.string().default('30d'),
+  // D34 LLM pre-tenant shop routing. A SEPARATE, tightly-capped routing team/key (fail-closed over budget →
+  // falls back to the deterministic regex). ROUTING_ENABLED off → regex-only (D32) and no pre-tenant calls.
+  LLM_ROUTING_ENABLED: z.string().default('true').transform((v) => v.toLowerCase() !== 'false' && v !== '0'),
+  LITELLM_ROUTING_BUDGET_USD: z.coerce.number().positive().default(2),
+  LLM_ROUTING_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.6),
   // Slice 005 public web form (D11). The web surface is OFF unless WEB_FORM_SIGNING_KEY is set
   // (fail-closed; keeps the keyless default run). It signs per-shop form + status tokens (I8/III).
   WEB_FORM_SIGNING_KEY: z.string().optional(),
