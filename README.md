@@ -26,7 +26,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
   reconciles exactly to LiteLLM's own team logs; cumulative $0.036, well under the $20 cap). See
   **[TESTING & EVALUATION](#testing--evaluation)** below.
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
-  (Docker required); **246 passing**.
+  (Docker required); **251 passing**.
 - **Walkthrough (Loom, 5–10 min):** **https://www.loom.com/share/25f9ad79d7fc48cabbaa91c5a299f054** — "one AI
   decision I overrode": the proposal, what was wrong, and what we did instead. The override is backed by real
   repo evidence in [`docs/AI_DECISION_OVERRIDE.md`](docs/AI_DECISION_OVERRIDE.md).
@@ -259,7 +259,7 @@ npm run lint        # dependency-cruiser module boundaries
 npm test            # Vitest: unit + contract + real-PostgreSQL integration (Testcontainers; needs Docker)
 ```
 
-Current suite: **246 passing** (unit + contract + real-Postgres integration). CI additionally runs
+Current suite: **251 passing** (unit + contract + real-Postgres integration). CI additionally runs
 gitleaks and `terraform validate` ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 ## The guarantees (invariants)

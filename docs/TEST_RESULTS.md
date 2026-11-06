@@ -32,23 +32,23 @@ terraform -chdir=infra/terraform fmt -check -recursive && terraform validate
 |---|---|---|
 | Strict typecheck | **PASS** | `tsc --noEmit` clean |
 | Module-boundary lint | **PASS** | dependency-cruiser: 0 violations (99 modules, 198 deps) |
-| **Full test suite** | **PASS — 246 / 246** | 38 files; duration ~49 s; **0 failed, 0 skipped, 0 not-run** |
+| **Full test suite** | **PASS — 251 / 251** | 39 files (unit 72 / contract 1 / integration 178); duration ~46 s; **0 failed, 0 skipped** |
 | Docker Compose config | **PASS** | default + `--profile llm` local overlay both valid |
 | Terraform | **PASS** | `fmt -check` + `validate` → Success |
 | Live model eval (gpt-5.4-mini) | **PASS** | 40 msgs, 38 real calls, 0 failures; `docs/results-live-gpt-5.4-mini.md` |
 
-Discovered = executed = 246. Nothing was skipped or excluded.
+Discovered = executed = 251. Nothing was skipped or excluded.
 
-## 4. By category (38 files, 246 tests)
+## 4. By category (39 files, 251 tests) — unit 72 · contract 1 · integration 178
 
 - **Unit (14 files):** `catalog-loader`, `config`, `decide`, `email-normalize`, `email-reply-safety`,
   `extraction`, `gateway-error-classify`, **`gateway-request` (D26)**, `guards`, `reply-token`,
   `resilient-gateway`, `servicing-classification`, **`shop-router-llm` (D34)**, `worker-health`.
 - **Contract (1 file):** `route-schema`.
-- **Integration — real Postgres (23 files):** `better-auth`, `bootstrap-recovery`, `budget-authority`,
+- **Integration — real Postgres (24 files):** `better-auth`, `bootstrap-recovery`, `budget-authority`,
   `budget`, `cancellation`, `credentials`, `csrf-origin`, `email-new-inbound`, `email-poll`, `email`,
   `foundation`, `guards-pipeline`, `held-budget-recovery`, `intake`, `orders`, `pipeline`, `portal`,
-  **`provision-shops` (D31)**, `readiness`, `resend-webhook`, `staff-identity`, `web-idempotency`, `web`.
+  **`provision-shops` (D31)**, `readiness`, `resend-webhook`, `staff-identity`, `web-idempotency`, `web`, **`email-llm-routing` (D34, LLM router wired into EmailService)**.
 
 ## 5. Coverage of the mandatory areas
 
@@ -63,6 +63,9 @@ Discovered = executed = 246. Nothing was skipped or excluded.
 | Tenant RLS / cross-shop isolation | `tests/integration/portal.test.ts`, `tests/integration/foundation.test.ts`, `tests/integration/readiness.test.ts` |
 | Per-shop budget + attribution / recovery | `tests/integration/budget.test.ts`, `tests/integration/budget-authority.test.ts`, `tests/integration/held-budget-recovery.test.ts` |
 | Email intake (new + reply) / webhook / poll | `tests/integration/email-new-inbound.test.ts`, `email.test.ts`, `resend-webhook.test.ts`, `email-poll.test.ts`, `tests/unit/email-normalize.test.ts` |
+| **LLM shop routing (D34)** — code-validated, regex fallback, budget fallback, injection rejection | `tests/unit/shop-router-llm.test.ts` (resolver) + `tests/integration/email-llm-routing.test.ts` (wired into EmailService, real PG, **mocked classifier**) + real-model eval 6/6 (`docs/results-live-gpt-5.4-mini.md`/§routing) |
+| **Generic-email shop resolution & pending clarification → reply → order (D32)** | `tests/integration/email-new-inbound.test.ts` (per-shop mention, no-shop/ambiguous → pending, reply resolves → one order) |
+| **Reply-safety / loop protection (D30)** | `tests/unit/email-reply-safety.test.ts` + the no-reply pending case in `email-new-inbound.test.ts` |
 | Same-browser independent submissions | `tests/integration/web-idempotency.test.ts` |
 | Auth / CSRF | `tests/integration/better-auth.test.ts`, `csrf-origin.test.ts`, `staff-identity.test.ts`, `bootstrap-recovery.test.ts` |
 | Worker health (Cloud Run) | `tests/unit/worker-health.test.ts` |
