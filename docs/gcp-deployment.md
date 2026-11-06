@@ -8,8 +8,10 @@ two-process app — not a hand-run VM.
 - **Terraform validated** ✅ (`fmt` + `validate`) — the production LB + custom-domain + internal-ingress shape.
 - **Actually deployed + end-to-end verified** ✅ on **GCP staging (`riverbend-staging`, 2026-11-06)** using a
   cheaper native-Cloud-Run shape (see **[`docs/GCP_STAGING_DEPLOYMENT_REPORT.md`](GCP_STAGING_DEPLOYMENT_REPORT.md)**):
-  customer form → real gpt-5.4-mini → `$65` work order, tenant isolation (RLS), idempotency, auth, budget
-  hold+recovery, and restart durability all passed (7/9; email NOT VERIFIED, live LLM-outage not injected).
+  public browser access, customer form → real gpt-5.4-mini → `$65` work order, tenant isolation (RLS),
+  idempotency, admin/staff + staff-scoped isolation, auth, budget hold+recovery, restart durability — all passed
+  (email NOT VERIFIED, live LLM-outage not injected). **The staging resources were then TORN DOWN** to avoid
+  charges (project + billing preserved); reproduce any time with `make gcp-deploy ENV=staging`.
 - **Production (LB + domain + HA)** — Terraform-validated, **not applied**; production readiness is not claimed.
 
 The staging deploy surfaced and fixed real Terraform bugs (worker missing `ADMIN_BOOTSTRAP_TOKEN`/`LLM_MODEL`/

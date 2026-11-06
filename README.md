@@ -28,10 +28,11 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
   (Docker required); **222 passing**.
 - **Deploy to GCP (one script, any project):** `make gcp-check ENV=staging` → `make gcp-deploy ENV=staging`
-  → `make gcp-bootstrap-admin ENV=staging` → `make gcp-test ENV=staging` (teardown: `make gcp-destroy`). Full
-  guide: **[`docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`](docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md)**. Live-verified
-  on staging 2026-11-06 (public browser access, real customer→work-order, admin/staff + tenant isolation) —
-  see the [**staging deploy report**](docs/GCP_STAGING_DEPLOYMENT_REPORT.md).
+  → `make gcp-bootstrap-admin ENV=staging` → `make gcp-test ENV=staging` → `make gcp-destroy ENV=staging CONFIRM=yes`.
+  Full guide: **[`docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`](docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md)**. This was
+  **deployed and end-to-end verified on staging 2026-11-06** (public browser access, real customer→work-order,
+  admin/staff + tenant isolation), then **torn down** to avoid charges — evidence in the
+  [**staging deploy report**](docs/GCP_STAGING_DEPLOYMENT_REPORT.md); `make gcp-deploy` reproduces it.
 - **Submission docs:** [architecture note](docs/architecture.md) (2-page, Mermaid) ·
   [Not Built & scaling](docs/not-built.md) · [evaluation results](docs/evaluation-results.md) ·
   [GCP deployment](docs/gcp-deployment.md) (`infra/terraform/`) · [**staging deploy report**](docs/GCP_STAGING_DEPLOYMENT_REPORT.md) (live-verified 2026-11-06) · [manual test walkthrough](docs/FINAL_MANUAL_TEST.md) ·

@@ -7,9 +7,14 @@ documentation. Legend: **PASS** (implemented + evidence) · **PARTIAL** (works, 
 **Production model (D26, 2026-11-06):** `openai/gpt-5.4-mini-2026-03-17` (upgraded from gpt-4o-mini; config-only
 rollback). See `docs/MODEL_COST_REPORT.md` and `docs/TEST_RESULTS.md`.
 
+**GCP status (2026-11-06):** staging was **deployed + end-to-end verified** (`riverbend-staging`) then **torn
+down** (no resources running; project + billing preserved) — reproduce with `make gcp-deploy ENV=staging`.
+Rows 21/25 "live staging" = verified-then-torn-down evidence, not a running environment. Production LB/HA shape
+is Terraform-validated, **not applied**.
+
 | # | Requirement | Actual implementation (evidence) | Tests | Live evidence | Verdict | Remaining gap |
 |--:|---|---|---|---|---|---|
-| 1 | Git repo + meaningful tests | `main` on GitHub; 220 tests on real Postgres | 34 files | — | **PASS** | — |
+| 1 | Git repo + meaningful tests | `main` on GitHub; 222 tests on real Postgres | 35 files | — | **PASS** | — |
 | 2 | One-command local startup | `docker compose up --build` / `make up`; `compose config -q` valid (default + local overlay) | compose-validate CI | boots healthy (earlier runs) | **PASS** | host `:5432` → local overlay |
 | 3 | Web intake | `src/api/web-routes.ts` + `src/modules/web`, signed form, status page | `web`, `web-idempotency` | — | **PASS** | — |
 | 4 | **New inbound email → new request** | **D25:** `EmailService.handleNewInbound` routes by `shops.inbound_address` (migration `13000`), submits via `IntakeService`; separate from reply-resume | `email-new-inbound` (9) | fixtures (not live inbox) | **PASS** | real per-shop verified addresses needed in prod; dedup needs stable Message-ID |

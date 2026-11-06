@@ -4,6 +4,14 @@
 read back from the live services, Cloud SQL, or LiteLLM's own DB — nothing is asserted from Terraform success
 alone. Secrets are never printed here.
 
+> **STATUS: TORN DOWN 2026-11-06 (no resources currently running).** After verification, all Riverbend
+> resources were deleted to avoid charges — Cloud Run (api/worker/litellm), Cloud SQL `riverbend-pg`, all 11
+> secrets, the `riverbend` Artifact Registry repo, the 3 `rb-*` service accounts, and the Cloud Build staging
+> bucket. The **project `riverbend-staging` and its billing association are preserved.** The DB held only
+> synthetic test data (no backup needed). This report is retained as **evidence of what was verified**; to
+> reproduce the environment, run `make gcp-deploy ENV=staging` (see `docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`).
+> The public URLs below no longer resolve.
+
 ## 1. Environment
 
 | Field | Value |
