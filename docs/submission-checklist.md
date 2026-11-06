@@ -5,13 +5,13 @@ Commands run from `app/`. Docker required for tests/eval (real PostgreSQL via Te
 Full requirement-by-requirement matrix: **`docs/FINAL_SUBMISSION_ACCEPTANCE.md`**. 2026-11-06 added new
 inbound-email intake (D25), a Cloud Run worker health listener, `429`≠budget, `held_budget` auto-recovery, and
 the **production model upgrade to `openai/gpt-5.4-mini-2026-03-17` (D26)** with a measured live run + per-tenant
-cost accounting (`docs/MODEL_COST_REPORT.md`, `docs/TEST_RESULTS.md`) → **222 passing**.
+cost accounting (`docs/MODEL_COST_REPORT.md`, `docs/TEST_RESULTS.md`) → **246 passing**.
 
 ## Mandatory requirements
 
 | # | Requirement | Status | Evidence | Remaining limitations |
 |--:|---|---|---|---|
-| 1 | Git repo with code + meaningful tests | **PASS** | 52+ commits on `main`, pushed to `github.com/sandeepsaynow/riverbend`; `npx vitest run` → **222 passed** (35 files, real PostgreSQL) | — |
+| 1 | Git repo with code + meaningful tests | **PASS** | 55+ commits on `main`, pushed to `github.com/sandeepsaynow/riverbend`; `npx vitest run` → **246 passed** (38 files, real PostgreSQL) | — |
 | 2 | One-command local startup | **PASS** | `docker compose up --build` (or `make up`); `docker compose config -q` + local overlay both valid; stack boots healthy (`/readyz`→ready, api+worker+db) verified in earlier live runs | host `:5432` conflict → use the local overlay (documented) |
 | 3 | Working demonstration | **PASS** | Live: customer form → catalog-priced work order; admin/staff login; cross-shop isolation; real-OpenAI order ($110 / $65). Deterministic by default (FakeGateway) | in-browser click-through (T054) is a manual step; guide in `FINAL_MANUAL_TEST.md` |
 | 4 | Reproducible 40-message evaluation | **PASS** | Both modes run: `make eval` (deterministic) → `docs/results.md`; **`make eval-live` EXECUTED 2026-11-06** on **`openai/gpt-5.4-mini-2026-03-17`** (D26) → `docs/results-live-gpt-5.4-mini.md` (38 real OpenAI calls); gpt-4o-mini run preserved as historical | — |
@@ -26,8 +26,8 @@ cost accounting (`docs/MODEL_COST_REPORT.md`, `docs/TEST_RESULTS.md`) → **222 
 | Check | Status | Command / evidence |
 |---|---|---|
 | Strict typecheck | **PASS** | `npm run typecheck` (clean) |
-| Module boundaries (lint) | **PASS** | `npm run lint` → dependency-cruiser, 0 violations (93 modules) |
-| Unit + integration tests | **PASS** | `npx vitest run` → **222 passed / 222** (35 files, real PostgreSQL) |
+| Module boundaries (lint) | **PASS** | `npm run lint` → dependency-cruiser, 0 violations (99 modules) |
+| Unit + integration tests | **PASS** | `npx vitest run` → **246 passed / 246** (38 files, real PostgreSQL) |
 | Docker Compose config | **PASS** | `docker compose config -q` + `-f … -f docker-compose.local.yml --profile llm config -q` |
 | Terraform | **PASS** | `terraform fmt -check -recursive` + `terraform validate` → Success |
 | Secret scan (tracked + history) | **PASS** | `git grep` secret patterns across all history → no matches; only `.env.example` (placeholders); `.env` git-ignored & never committed; CI runs gitleaks |

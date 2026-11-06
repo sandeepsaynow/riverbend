@@ -31,24 +31,24 @@ terraform -chdir=infra/terraform fmt -check -recursive && terraform validate
 | Check | Result | Evidence |
 |---|---|---|
 | Strict typecheck | **PASS** | `tsc --noEmit` clean |
-| Module-boundary lint | **PASS** | dependency-cruiser: 0 violations (96 modules, 194 deps) |
-| **Full test suite** | **PASS — 222 / 222** | 35 files; duration ~51 s; **0 failed, 0 skipped, 0 not-run** |
+| Module-boundary lint | **PASS** | dependency-cruiser: 0 violations (99 modules, 198 deps) |
+| **Full test suite** | **PASS — 246 / 246** | 38 files; duration ~49 s; **0 failed, 0 skipped, 0 not-run** |
 | Docker Compose config | **PASS** | default + `--profile llm` local overlay both valid |
 | Terraform | **PASS** | `fmt -check` + `validate` → Success |
 | Live model eval (gpt-5.4-mini) | **PASS** | 40 msgs, 38 real calls, 0 failures; `docs/results-live-gpt-5.4-mini.md` |
 
-Discovered = executed = 222. Nothing was skipped or excluded.
+Discovered = executed = 246. Nothing was skipped or excluded.
 
-## 4. By category (35 files, 222 tests)
+## 4. By category (38 files, 246 tests)
 
-- **Unit (12 files):** `catalog-loader`, `config`, `decide`, `email-normalize`, `extraction`,
-  `gateway-error-classify`, **`gateway-request` (new, D26)**, `guards`, `reply-token`, `resilient-gateway`,
-  `servicing-classification`, `worker-health`.
+- **Unit (14 files):** `catalog-loader`, `config`, `decide`, `email-normalize`, `email-reply-safety`,
+  `extraction`, `gateway-error-classify`, **`gateway-request` (D26)**, `guards`, `reply-token`,
+  `resilient-gateway`, `servicing-classification`, **`shop-router-llm` (D34)**, `worker-health`.
 - **Contract (1 file):** `route-schema`.
-- **Integration — real Postgres (22 files):** `better-auth`, `bootstrap-recovery`, `budget-authority`,
+- **Integration — real Postgres (23 files):** `better-auth`, `bootstrap-recovery`, `budget-authority`,
   `budget`, `cancellation`, `credentials`, `csrf-origin`, `email-new-inbound`, `email-poll`, `email`,
   `foundation`, `guards-pipeline`, `held-budget-recovery`, `intake`, `orders`, `pipeline`, `portal`,
-  `readiness`, `resend-webhook`, `staff-identity`, `web-idempotency`, `web`.
+  **`provision-shops` (D31)**, `readiness`, `resend-webhook`, `staff-identity`, `web-idempotency`, `web`.
 
 ## 5. Coverage of the mandatory areas
 
@@ -92,7 +92,7 @@ Discovered = executed = 222. Nothing was skipped or excluded.
 
 ## 9. Failures encountered & resolution
 
-None in the test suite (222/222 first pass). During the D26 upgrade the **only** real incompatibility found was
+None in the test suite (246/246, clean first pass). During the D26 upgrade the **only** real incompatibility found was
 the `max_tokens` → `max_completion_tokens` parameter change (caught by the pre-upgrade provider smoke test,
 fixed in `src/platform/llm/litellm-gateway.ts`, pinned by `gateway-request.test.ts`).
 
@@ -102,7 +102,7 @@ fixed in `src/platform/llm/litellm-gateway.ts`, pinned by `gateway-request.test.
 docker compose --profile llm up -d db litellm      # Postgres + proxy (proxy holds OPENAI_API_KEY)
 npm ci
 npm run typecheck && npm run lint
-npx vitest run                                      # 222 tests, real Postgres
+npx vitest run                                      # 246 tests, real Postgres
 EVAL_LLM_BASE_URL=http://localhost:4000/v1 make eval-live   # paid live eval (optional)
 ```
 

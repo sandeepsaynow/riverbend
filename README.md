@@ -26,7 +26,10 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
   reconciles exactly to LiteLLM's own team logs; cumulative $0.036, well under the $20 cap). See
   **[TESTING & EVALUATION](#testing--evaluation)** below.
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
-  (Docker required); **237 passing**.
+  (Docker required); **246 passing**.
+- **Walkthrough (Loom, 5–10 min):** **https://www.loom.com/share/25f9ad79d7fc48cabbaa91c5a299f054** — "one AI
+  decision I overrode": the proposal, what was wrong, and what we did instead. The override is backed by real
+  repo evidence in [`docs/AI_DECISION_OVERRIDE.md`](docs/AI_DECISION_OVERRIDE.md).
 - **Deploy to GCP (one script, any project):** `make gcp-check ENV=staging` → `make gcp-deploy ENV=staging`
   → `make gcp-bootstrap-admin ENV=staging` → `make gcp-test ENV=staging` → `make gcp-destroy ENV=staging CONFIRM=yes`.
   Full guide: **[`docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`](docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md)**.
@@ -171,7 +174,7 @@ real runs on **2026-11-06** (commit of record: the D26 upgrade commit).
 
 | Check | Result |
 |---|--:|
-| Full suite (`npx vitest run`, real Postgres) | **222 / 222 passed** (35 files, 0 skipped) |
+| Full suite (`npx vitest run`, real Postgres) | **246 / 246 passed** (38 files, 0 skipped) |
 | Typecheck · Lint · Compose · Terraform | all **PASS** |
 | Live eval failures | **0 / 40** |
 
@@ -256,7 +259,7 @@ npm run lint        # dependency-cruiser module boundaries
 npm test            # Vitest: unit + contract + real-PostgreSQL integration (Testcontainers; needs Docker)
 ```
 
-Current suite: **237 passing** (unit + contract + real-Postgres integration). CI additionally runs
+Current suite: **246 passing** (unit + contract + real-Postgres integration). CI additionally runs
 gitleaks and `terraform validate` ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 ## The guarantees (invariants)

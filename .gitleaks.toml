@@ -15,4 +15,11 @@ paths = [
 regexes = [
   '''replace-with-a-long-random-admin-secret''',
   '''dev-only-admin-secret-change-me''',
+  # Hardcoded test-only fixtures (no real credential; used only by Vitest against ephemeral containers).
+  '''csrf-secret-0123456789abcdef''',
+  '''test-better-auth-secret-0123456789''',
+  '''Str0ng-Passw0rd-123''',
+  '''An0ther-Str0ng-Pw-456''',
+  '''wrong-password-xx''',
+  '''longenoughpassword''',
 ]
