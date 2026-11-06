@@ -6,6 +6,7 @@ import { runMigrations, schemaState } from '../platform/db/migrate.js';
 import { findPolicyGaps } from '../platform/db/policy-check.js';
 import { AuthService } from '../modules/auth/index.js';
 import { ShopsService } from '../modules/shops/index.js';
+import { provisionDefaultShops } from '../modules/shops/provision.js';
 import { CatalogService } from '../modules/catalog/index.js';
 import { IntakeService } from '../modules/intake/index.js';
 import { OrdersService } from '../modules/orders/index.js';
@@ -49,6 +50,15 @@ async function main(): Promise<void> {
   const shops = new ShopsService(db);
   const catalog = new CatalogService(db);
   await catalog.seedFromFile(CATALOG_PATH);
+
+  // Auto-provision the three default shops + inbound addresses (D31) — idempotent, no key issuance, no
+  // order changes. Makes a fresh `make up`/deploy ready to use (previously shops only existed after a manual
+  // `make provision`). Off with AUTO_PROVISION_SHOPS=false.
+  if (config.AUTO_PROVISION_SHOPS) {
+    const domain = config.RESEND_INBOUND_DOMAIN ?? config.RESEND_REPLY_DOMAIN;
+    const r = await provisionDefaultShops(shops, { inboundDomain: domain });
+    logger.info({ shops: r.map((s) => s.slug), created: r.filter((s) => s.created).length, inboundDomain: domain }, 'default shops provisioned');
+  }
   const intake = new IntakeService(db);
   const orders = new OrdersService(db);
 

@@ -7,10 +7,11 @@
  * Plaintext keys are printed ONCE here — copy them now; they are not retrievable later.
  */
 import { Db } from '../src/platform/db/index.js';
-import { ShopsService, ShopSlugTaken } from '../src/modules/shops/index.js';
+import { ShopsService } from '../src/modules/shops/index.js';
+import { provisionDefaultShops, DEFAULT_SHOP_SLUGS } from '../src/modules/shops/provision.js';
 import { AuthService } from '../src/modules/auth/index.js';
 
-const SHOPS = ['rb-downtown', 'rb-northside', 'rb-lakeshore'];
+const SHOPS = [...DEFAULT_SHOP_SLUGS];
 const SCOPES = ['intake:write', 'requests:read', 'orders:read', 'catalog:read', 'shop:read'];
 const ADMIN_URL = process.env.DATABASE_ADMIN_URL ?? 'postgres://app_admin:admin_pw@localhost:5432/riverbend';
 // Trusted inbound-email routing (D25): one receiving address per shop. For a real deployment set
@@ -24,19 +25,14 @@ async function main(): Promise<void> {
   const auth = new AuthService(db);
 
   console.log(`Provisioning ${SHOPS.length} shops${rotate ? ' (--rotate: will issue new keys)' : ''}…\n`);
+  // Shops + inbound addresses via the SAME idempotent helper the api runs on boot (no drift).
+  const provisioned = await provisionDefaultShops(shops, { inboundDomain: INBOUND_DOMAIN });
+  for (const p of provisioned) {
+    console.log(`  ${p.slug}: shop ${p.created ? 'created' : 'exists (reused)'}`);
+    console.log(`  ${p.slug}: inbound address → ${p.inboundAddress ?? '(none)'}`);
+  }
+  // Then issue one shop API key each (plaintext shown ONCE; an existing active key is never rotated).
   for (const slug of SHOPS) {
-    try {
-      await shops.createShop({ slug, timeZone: 'America/Chicago' });
-      console.log(`  ${slug}: shop created`);
-    } catch (err) {
-      if (err instanceof ShopSlugTaken) console.log(`  ${slug}: shop exists (reused)`);
-      else throw err;
-    }
-    // Set the shop's trusted inbound address (D25). A new email to this address creates a new request
-    // for THIS shop; the sender is never used for routing. Idempotent (overwrites to the same value).
-    const inbound = `${slug}@${INBOUND_DOMAIN}`;
-    await shops.setInboundAddress(slug, inbound);
-    console.log(`  ${slug}: inbound address → ${inbound}`);
     const existing = (await auth.listShopCredentials(slug)).filter((c) => c.kind === 'shop' && c.status === 'active');
     if (existing.length > 0 && !rotate) {
       console.log(`  ${slug}: active key already present (prefix ${existing[0]!.prefix}…) — NOT rotating. Use \`make provision ROTATE=1\` to replace.\n`);

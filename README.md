@@ -26,7 +26,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
   reconciles exactly to LiteLLM's own team logs; cumulative $0.036, well under the $20 cap). See
   **[TESTING & EVALUATION](#testing--evaluation)** below.
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
-  (Docker required); **222 passing**.
+  (Docker required); **234 passing**.
 - **Deploy to GCP (one script, any project):** `make gcp-check ENV=staging` → `make gcp-deploy ENV=staging`
   → `make gcp-bootstrap-admin ENV=staging` → `make gcp-test ENV=staging` → `make gcp-destroy ENV=staging CONFIRM=yes`.
   Full guide: **[`docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`](docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md)**.
@@ -106,8 +106,9 @@ de-duplicate (Message-ID), and resume the pipeline:
 
 **New inbound email → new work order (D25).** A brand-new customer email (no reply token) creates a **new**
 request, attributed to the shop that owns the **verified destination address** — never the sender. The map
-is `shops.inbound_address`; `make provision` sets one address per shop (`<slug>@$RESEND_INBOUND_DOMAIN`, set
-`RESEND_INBOUND_DOMAIN` to your verified receiving domain in production). An email to an unknown or ambiguous
+is `shops.inbound_address`, set to `<slug>@$RESEND_INBOUND_DOMAIN` by the **auto-provisioning on api boot**
+(falls back to `RESEND_REPLY_DOMAIN`; set `RESEND_INBOUND_DOMAIN` to your verified receiving domain in
+production). An email to an unknown or ambiguous
 recipient is safely ignored; duplicates collapse by Message-ID. This is distinct from a reply (above), which
 resumes an existing request. Covered by `tests/integration/email-new-inbound.test.ts`.
 
@@ -120,8 +121,9 @@ Resend receiving domain, so customers email **any sender → the shop address**:
 | rb-northside | `rb-northside@karoiechou.resend.app` |
 | rb-lakeshore | `rb-lakeshore@karoiechou.resend.app` |
 
-Set them with `RESEND_INBOUND_DOMAIN=karoiechou.resend.app make provision` (any local-part on that managed
-domain routes to the account; routing uses the **recipient address only**, never the email body/sender). A
+Set `RESEND_INBOUND_DOMAIN=karoiechou.resend.app` and the addresses are applied on the next api boot
+(auto-provision; any local-part on that managed domain routes to the account; routing uses the **recipient
+address only**, never the email body/sender). A
 real Gmail → Resend → poll → **gpt-5.4-mini** email was processed end-to-end into a `FLAT_FIX + CHAIN_REPLACE`
 ($60) work order. **Reply safety (D30):** automated replies to `no-reply@`/`mailer-daemon@`/`postmaster@`/
 list senders are suppressed (parked `needs_review`) to avoid bounce loops; replies stay ≤1 per request.
@@ -215,9 +217,10 @@ off unless `BETTER_AUTH_SECRET` is set.
 
 API docs: **Swagger UI at `http://localhost:8080/docs`** (+ `/openapi.json`) — non-production only.
 
-No-SQL local setup (against a running `make up`): **`make provision`** ensures the three shops and
-issues a shop API key each (shown once; idempotent — it never rotates an existing active key; use
-`make provision ROTATE=1` to replace). Then:
+The three default shops (Downtown, Northside, Lakeshore) + their inbound addresses are **auto-provisioned on
+every api boot** (idempotent; off with `AUTO_PROVISION_SHOPS=false`) — a fresh `make up` is ready to use, no
+manual step. **`make provision`** is now only needed to **issue a shop API key** per shop (shown once;
+idempotent — never rotates an existing active key; `make provision ROTATE=1` to replace). Then:
 
 ```sh
 KEY=rb_shop_...        # from `make provision` output (copy once)
@@ -259,7 +262,7 @@ npm run lint        # dependency-cruiser module boundaries
 npm test            # Vitest: unit + contract + real-PostgreSQL integration (Testcontainers; needs Docker)
 ```
 
-Current suite: **88 passing** (unit + contract + real-Postgres integration). CI additionally runs
+Current suite: **234 passing** (unit + contract + real-Postgres integration). CI additionally runs
 gitleaks and `terraform validate` ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 ## The guarantees (invariants)

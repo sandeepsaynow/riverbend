@@ -65,6 +65,13 @@ const ConfigSchema = z.object({
   RESEND_WEBHOOK_SECRET: z.string().optional(),    // Svix signing secret (whsec_…) for POST /webhooks/resend
   RESEND_FROM: z.string().default('Riverbend Cycles <onboarding@resend.dev>'), // verified sender (or resend.dev while testing)
   RESEND_REPLY_DOMAIN: z.string().default('riverbend.example'),                // reply+<token>@<this> (a Resend receiving domain)
+  // Receiving domain for per-shop new-inbound addresses `<slug>@<this>` (D25/D31). Falls back to
+  // RESEND_REPLY_DOMAIN when unset. Set to your VERIFIED Resend receiving domain in production.
+  RESEND_INBOUND_DOMAIN: z.string().optional(),
+  // Auto-provision the three default shops + inbound addresses on api boot (idempotent; no key issuance,
+  // no order changes). On by default so a fresh `make up`/deploy is ready to use; set 'false' to manage
+  // shops manually. API keys are still issued by `make provision` (shown once).
+  AUTO_PROVISION_SHOPS: z.string().default('true').transform((v) => v.toLowerCase() !== 'false' && v !== '0'),
   EMAIL_MAX_SEND_ATTEMPTS: z.coerce.number().int().positive().default(5),      // bounded outbound retry before needs_review
   // Inbound by Resend Receiving-API polling (D21.1) — the default local/MVP mode (no webhook/URL/tunnel).
   // Active when RESEND_API_KEY + EMAIL_SIGNING_KEY are set and this is not 'false'. The webhook stays

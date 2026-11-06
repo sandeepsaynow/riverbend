@@ -50,3 +50,22 @@ I1 isolation, I7 no committed secrets, VII privacy (audit logs ids-only). No cha
 Issue→list(masked, no secret)→authenticate ok→expire→401; revoke→401; rotate→old 401 + new ok; audit
 rows for each event; scope enforcement (orders:read); `/openapi.json` covers every mounted route and
 `/docs` serves Swagger UI (non-prod only); provisioning is idempotent and never silently rotates.
+
+## Amendment (D31, 2026-11-06) — default shops auto-provisioned on boot
+
+> Fresh deployments previously had **zero shops** until an operator ran `make provision`: `make up` applies
+> migrations (schema + catalog) but migrations do not seed tenant rows. D31 fixes this.
+
+- **FR-009 Auto-provision on boot.** The api, after migrations + the catalog seed, calls
+  `provisionDefaultShops` (`src/modules/shops/provision.ts`) to ensure the three default shops
+  (`rb-downtown`, `rb-northside`, `rb-lakeshore`) exist and own their inbound address `<slug>@<domain>`
+  (`RESEND_INBOUND_DOMAIN`, falling back to `RESEND_REPLY_DOMAIN`). **Idempotent**: existing shops are reused
+  (never duplicated, ids stable), no credentials are issued or rotated, and no orders/messages are modified —
+  so it is safe on every boot, fresh or existing. Off with `AUTO_PROVISION_SHOPS=false`.
+- **FR-010 Keys stay explicit.** `make provision` now only **issues one shop API key per shop** (shown once;
+  never rotates an active key; `ROTATE=1` to replace). It reuses the same `provisionDefaultShops` helper for
+  the shops+addresses, so CLI and boot-time provisioning never drift. Web-form and email intake work without
+  a shop API key; only programmatic `/v1` access needs one.
+- **Compatibility:** inbound-domain handling is unchanged for D31 routing — a shop-specific address stays
+  authoritative; a missing domain leaves inbound addresses null (email-by-address off; generic content
+  routing + web form unaffected). Verified by `tests/integration/provision-shops.test.ts`.
