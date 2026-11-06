@@ -66,6 +66,21 @@ rows for each event; scope enforcement (orders:read); `/openapi.json` covers eve
   never rotates an active key; `ROTATE=1` to replace). It reuses the same `provisionDefaultShops` helper for
   the shops+addresses, so CLI and boot-time provisioning never drift. Web-form and email intake work without
   a shop API key; only programmatic `/v1` access needs one.
-- **Compatibility:** inbound-domain handling is unchanged for D31 routing — a shop-specific address stays
-  authoritative; a missing domain leaves inbound addresses null (email-by-address off; generic content
-  routing + web form unaffected). Verified by `tests/integration/provision-shops.test.ts`.
+- **Compatibility (D32):** the routing model is the single generic address + content resolution (+ pending
+  intake). Auto-provision still writes `<slug>@<domain>` inbound addresses, but these are the **legacy
+  per-shop-address capability**, not the routing model — a customer emails the generic address and the shop is
+  resolved from content. A missing domain leaves inbound addresses null (harmless; generic routing + web form
+  unaffected). Setting addresses does NOT restore shop-specific routing as the default. Verified by
+  `tests/integration/provision-shops.test.ts` + the D32 `email-new-inbound` content-routing tests.
+
+## Amendment (D33, 2026-11-06) — GCP passes the provisioning env + verification
+
+- **FR-011 GCP parity.** The GCP deploy (`scripts/gcp/riverbend-gcp.sh`) now passes `AUTO_PROVISION_SHOPS`,
+  `RESEND_REPLY_DOMAIN` and `RESEND_INBOUND_DOMAIN` to the api Cloud Run service, so its boot-time
+  auto-provisioning uses the operator's configured receiving domain (previously it silently fell back to the
+  `riverbend.example` placeholder and could not be configured/disabled). Same mechanism as local.
+- **Verified (D33):** local `docker compose up` auto-provisions exactly 3 shops (distinct ids), 12-service
+  catalog, inbound addresses, all three forms 200; api restart is idempotent (`created:0`, ids stable, data
+  survives); `make provision` reuses shops (ids identical) and never rotates an active key; `AUTO_PROVISION_SHOPS`
+  parses/gates correctly; missing vs configured `RESEND_INBOUND_DOMAIN` both handled. **Fresh-GCP** behavior is
+  **config-verified only** (terraform validate + script audit) — not live-applied this pass.

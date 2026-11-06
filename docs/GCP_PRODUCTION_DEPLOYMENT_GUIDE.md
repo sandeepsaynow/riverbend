@@ -34,8 +34,11 @@ This enables the required APIs, creates Artifact Registry, **builds + pushes bot
 Build, custom LiteLLM via `scripts/gcp/cloudbuild.litellm.yaml`), creates Cloud SQL (sized per `ENV`) with the
 `riverbend` + `litellm` databases and the `app_user`(NOBYPASSRLS)/`app_admin`/`litellm_app` roles, loads
 Secret Manager, deploys **api** and **worker (+ LiteLLM sidecar)**, makes the **api publicly invokable**
-(app-layer auth still enforced), runs **migrations at API boot**, and **provisions the 3 shops**. It prints the
-public URL at the end.
+(app-layer auth still enforced), runs **migrations at API boot**, and **auto-provisions the 3 shops** (the api
+does this on boot — the deploy passes `AUTO_PROVISION_SHOPS`, `RESEND_REPLY_DOMAIN` and `RESEND_INBOUND_DOMAIN`
+from `deploy.<ENV>.env`, so the shops' inbound domain matches your config; D33). It prints the public URL at
+the end. Shop creation is automatic + idempotent; `make gcp-bootstrap-admin` and shop **API keys**
+(`make provision`, if you need `/v1` access) are the only manual, key-issuing steps.
 
 Sizing: `ENV=staging` → `db-f1-micro` zonal, api/litellm scale-to-zero, worker min 1 (cheap, disposable).
 `ENV=prod` → `db-custom-2-7680` REGIONAL (HA) + backups, warm mins; **`make gcp-deploy ENV=prod CONFIRM=yes`**

@@ -106,7 +106,7 @@ cmd_deploy() {
     --port 8080 --min-instances "$API_MIN" --max-instances 3 --cpu 1 --memory 512Mi --allow-unauthenticated \
     --add-cloudsql-instances "$CONN" \
     --set-secrets DATABASE_URL=database-url:latest,DATABASE_ADMIN_URL=database-admin-url:latest,DATABASE_MIGRATOR_URL=database-migrator-url:latest,ADMIN_BOOTSTRAP_TOKEN=admin-bootstrap-token:latest,WEB_FORM_SIGNING_KEY=web-form-signing-key:latest,EMAIL_SIGNING_KEY=email-signing-key:latest,BETTER_AUTH_SECRET=better-auth-secret:latest \
-    --set-env-vars NODE_ENV=production
+    --set-env-vars "NODE_ENV=production,AUTO_PROVISION_SHOPS=${AUTO_PROVISION_SHOPS:-true},RESEND_REPLY_DOMAIN=${RESEND_REPLY_DOMAIN:-riverbend.example},RESEND_INBOUND_DOMAIN=${RESEND_INBOUND_DOMAIN:-${RESEND_REPLY_DOMAIN:-riverbend.example}}"
   AU="$(apiurl)"; echo "   API URL: $AU"
   gcloud run services update rb-api --region "$REGION" --project "$PROJECT" --update-env-vars "BETTER_AUTH_URL=$AU,WEB_ALLOWED_ORIGINS=$AU" >/dev/null
   echo "-- deploy worker (+litellm sidecar) --"

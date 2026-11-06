@@ -33,4 +33,16 @@ describe('config refuse-to-start (FR-014 / SC-005)', () => {
       expect((e as Error).message).toContain('ADMIN_BOOTSTRAP_TOKEN');
     }
   });
+
+  it('D33: AUTO_PROVISION_SHOPS defaults true and is disabled by false/0 (the api gates boot-time provisioning on it)', () => {
+    expect(loadConfig(full).AUTO_PROVISION_SHOPS).toBe(true);           // default on
+    expect(loadConfig({ ...full, AUTO_PROVISION_SHOPS: 'false' }).AUTO_PROVISION_SHOPS).toBe(false);
+    expect(loadConfig({ ...full, AUTO_PROVISION_SHOPS: '0' }).AUTO_PROVISION_SHOPS).toBe(false);
+    expect(loadConfig({ ...full, AUTO_PROVISION_SHOPS: 'true' }).AUTO_PROVISION_SHOPS).toBe(true);
+  });
+
+  it('D33: RESEND_INBOUND_DOMAIN is optional (falls back to RESEND_REPLY_DOMAIN in the api)', () => {
+    expect(loadConfig(full).RESEND_INBOUND_DOMAIN).toBeUndefined();     // unset → caller falls back
+    expect(loadConfig({ ...full, RESEND_INBOUND_DOMAIN: 'karoiechou.resend.app' }).RESEND_INBOUND_DOMAIN).toBe('karoiechou.resend.app');
+  });
 });
