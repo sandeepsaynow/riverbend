@@ -175,3 +175,14 @@ After these fixes the full deploy ran **exit 0 end-to-end** (APIs → Artifact R
 Build → Cloud SQL + roles/dbs → 11 secrets → api (public) → worker+sidecar → migrations at boot → 3 shops),
 with **no manual intervention**. Secrets stay in the gitignored `scripts/gcp/deploy.staging.env` (provider keys
 filled from `.env`; signing keys + DB passwords generated and appended there, never printed or committed).
+
+## 13. D34 redeploy — LLM routing live on staging (2026-11-06)
+
+Redeployed via `make gcp-deploy ENV=staging` (idempotent; both images rebuilt, api+worker updated). State:
+
+- **Public URL:** `https://rb-api-rralynv5pq-uc.a.run.app` (smoke green: `/readyz`,`/f/<shop>`,`/admin/login` 200; `/admin/init`,`/v1`,`/staff` rejected).
+- **Generic receiving address:** customers email **`sandeepsudhagani@karoiechou.resend.app`** (any local-part on that managed domain reaches the account; the shop is resolved from the message, not the address). Shops are auto-provisioned on `karoiechou.resend.app`.
+- **Active poller: GCP** — the local docker worker was stopped; the GCP worker polls the Resend inbox (`email_poll_state.updated_at` advancing every ~60s). One environment owns the inbox (no competition).
+- **LLM routing:** worker + LiteLLM sidecar healthy; generic-address emails are routed by gpt-5.4-mini (code-validated, capped routing key, regex fallback, pending-intake on ambiguity/unknown).
+- **Manual test:** send an email to `sandeepsudhagani@karoiechou.resend.app` mentioning a location (e.g. "tune-up at Northside") → within a poll interval it becomes a Northside work order; a no-location email → a clarification reply asking which shop, then your reply resolves it. **Left running** for your tests; tear down with `make gcp-destroy ENV=staging CONFIRM=yes`.
+- **Not verified live:** brand-new inbound delivery/clarification through the real provider is yours to exercise now (Resend sandbox blocked me sending to shop addresses); the routing logic is verified by the real-model eval (6/6) + real-PG tests.
