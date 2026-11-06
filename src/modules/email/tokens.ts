@@ -22,6 +22,17 @@ function bytesToUuid(b: Buffer): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
+/**
+ * Pending-intake correlation (D32): a reply to a shop-clarification email must correlate to a
+ * `pending_inbound_email` row that has NO shop yet. We reuse the reply-token encoding with an all-zero
+ * shop sentinel, so the same `reply+<token>@` channel and verification path carry both normal replies
+ * (real shopId) and pending replies (sentinel → the `requestId` slot holds the pending id).
+ */
+export const PENDING_SHOP_SENTINEL = '00000000-0000-0000-0000-000000000000';
+export function mintPendingToken(key: string, pendingId: string): string {
+  return mintReplyToken(key, PENDING_SHOP_SENTINEL, pendingId);
+}
+
 export function mintReplyToken(key: string, shopId: string, requestId: string): string {
   const payload = Buffer.concat([uuidToBytes(shopId), uuidToBytes(requestId)]); // 32 bytes
   const mac = createHmac('sha256', key).update(payload).digest().subarray(0, MAC_LEN);

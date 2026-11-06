@@ -89,13 +89,15 @@ describe('AI pipeline (003) against the fake gateway', () => {
     expect(ex.rowCount).toBe(0); // invalid output never persisted as a usable extraction
   });
 
-  it('price inquiry → answered; wrong shop → needs_review (never auto-moved)', async () => {
+  it('price inquiry → answered; D32: a message naming another shop is NOT re-routed (origin retained)', async () => {
     const price = await newRequest('how much for a full overhaul?');
     await pipeline.run({ requestId: price, shopId });
     expect(await state(price)).toBe('answered');
+    // D32: the "Lakeshore" mention is ignored for routing (origin shop is authoritative). "my bike squeaks"
+    // is a symptom with no specific service → ask for repair details (awaiting_customer), NOT needs_review.
     const wrong = await newRequest('Hi Lakeshore team! my bike squeaks');
     await pipeline.run({ requestId: wrong, shopId });
-    expect(await state(wrong)).toBe('needs_review');
+    expect(await state(wrong)).toBe('awaiting_customer');
   });
 
   it('ambiguous → exactly one follow-up (I6); a second follow-up is refused by the DB', async () => {

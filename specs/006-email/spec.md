@@ -167,3 +167,34 @@ Mailpit sink is retired). Email is a side effect owned by **code**, behind an `E
   shop; content never re-routes an existing conversation. Idempotency (Message-ID), duplicate protection,
   per-shop LiteLLM budgets, reply-safety (FR-020) and RLS are all preserved; routing resolution uses the
   cross-tenant admin read only to pick the shop, then intake runs tenant-scoped under it.
+
+## New requirements (D32, 2026-11-06) — one generic address + pre-tenant pending-intake
+
+> **AMENDMENT 2026-11-06 (D32).** Simplifies inbound to a SINGLE public receiving address and makes web/api
+> tenant ownership permanent. Supersedes the D30/D31 guidance that per-shop receiving addresses are the
+> routing authority (that capability remains in code but is no longer the recommended model). The m-1009
+> deterministic shop-mismatch guard and the D31 web shop-confirmation are **removed**: routing is decided once
+> at intake and the pipeline never re-routes. Historical result reports are preserved as labelled evidence.
+
+- **FR-026 One generic receiving address.** Customers email a single public address (e.g.
+  `sandeepsudhagani@karoiechou.resend.app`) that maps to no shop. Shop is resolved from the message content.
+  Per-shop `shops.inbound_address` routing still works if explicitly set, but is not required or recommended.
+- **FR-027 Web/api origin is the PERMANENT tenant.** A web-form (or `/v1` API-key) request belongs to its
+  origin shop forever, regardless of shop names in the body or any later reply. No shop-mismatch clarification
+  is sent; shop mentions are ignored for routing; only missing REPAIR details prompt a clarification. A request
+  is never transferred between shops.
+- **FR-028 Pre-tenant pending-intake.** A generic email whose shop cannot be resolved (missing / ambiguous /
+  contradictory → 0 or >1 named shops) is NOT dropped and NOT attributed to a tenant. It is recorded in the
+  system `pending_inbound_email` table — **no `shop_id`, no RLS weakened** (it holds only the customer's own
+  pre-routing message; nothing shop-owned). A worker sweep sends **one** reply-safe shop-clarification
+  (bounded by `clarify_sent` → no loops). Shop resolution is deterministic CODE (regex against the three
+  configured shops) — **no LLM runs before a tenant exists**, so there is no pre-tenant inference spend/abuse
+  vector, and the LLM never assigns a tenant.
+- **FR-029 Clarification reply resolves the shop.** The reply correlates by a pending token (zero-shop
+  sentinel) to the `pending_inbound_email` row; the shop is re-resolved from the reply + original body; on
+  exactly one match the real tenant request is created from the ORIGINAL message (idempotent on the original
+  Message-ID) and the pending row is marked `resolved`. Still unresolved → stays pending (bounded, no second
+  clarification). A no-reply/bounce/list sender → pending `abandoned` (never emailed).
+- **FR-030 Established tenant is sticky.** Email conversations retain the shop confirmed at resolution;
+  web/api conversations retain their origin. A later shop mention never changes ownership. Idempotency,
+  pg-boss, catalog pricing, per-shop LiteLLM budgets, bounded retries and duplicate protection are preserved.

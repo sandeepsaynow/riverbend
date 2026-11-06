@@ -153,6 +153,10 @@ async function main(): Promise<void> {
       email.relayPending(mailTransport).catch((err: unknown) =>
         logger.error({ err: err instanceof Error ? err.message : String(err) }, 'email relay failed'),
       );
+      // D32: send one shop-clarification for each pending-intake email awaiting a shop (reply-safe, bounded).
+      email.relayPendingClarifications(mailTransport).catch((err: unknown) =>
+        logger.error({ err: err instanceof Error ? err.message : String(err) }, 'pending clarification relay failed'),
+      );
       // Drain inbound/delivery provider events (fetch content + correlate; update send status).
       if (receiving) {
         email.processPendingEvents(receiving).catch((err: unknown) =>

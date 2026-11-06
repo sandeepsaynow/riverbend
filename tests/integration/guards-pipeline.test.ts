@@ -72,30 +72,14 @@ describe('correctness guards (end-to-end)', () => {
     expect(ex.rows[0]!.flagged).toBe(true);
   });
 
-  it('m-1009: message addressing another shop → needs_review, no model call, no order', async () => {
-    const id = await submit(downtown, 'Hi Lakeshore team! Following up — can you also tune my road bike? Sunday works.');
-    const { p, gw } = pipe({ kind: 'repair', bikes: [{ bikeNumber: 1, issues: ['tune'], serviceCodes: ['TUNE_BASIC'] }], urgency: 'normal', dateWords: null, questionDraft: null });
+  it('D32: a message naming another shop is handled as a normal repair for the ORIGIN shop (no re-route, no needs_review)', async () => {
+    const id = await submitWeb(downtown, 'Hi Lakeshore team! Following up — can you also tune my road bike? Sunday works.');
+    const { p } = pipe({ kind: 'wrong_shop', bikes: [{ bikeNumber: 1, issues: ['tune'], serviceCodes: ['TUNE_BASIC'] }], urgency: 'normal', dateWords: null, questionDraft: null });
     await p.run({ requestId: id, shopId: downtown });
     await orders.createFromExtraction(downtown, id);
-    const s = await state(id);
-    expect(s.state).toBe('needs_review');
-    expect(s.last_error).toBe('wrong_shop_suspected');
-    expect(gw.calls).toBe(0); // short-circuited before any model call
-    expect(await orderCount(id)).toBe(0);
-  });
-
-  it('D31: a WEB-form mismatch asks the customer to confirm and stays pending (no order, no tenant move)', async () => {
-    const id = await submitWeb(downtown, 'Hi Lakeshore team! Can you tune my road bike? Sunday works.');
-    const { p, gw } = pipe({ kind: 'repair', bikes: [{ bikeNumber: 1, issues: ['tune'], serviceCodes: ['TUNE_BASIC'] }], urgency: 'normal', dateWords: null, questionDraft: null });
-    await p.run({ requestId: id, shopId: downtown });
-    await orders.createFromExtraction(downtown, id);
-    const s = await state(id);
-    expect(s.state).toBe('awaiting_customer'); // pending on customer confirmation, NOT needs_review
-    expect(gw.calls).toBe(0); // deterministic guard, no model call
-    expect(await orderCount(id)).toBe(0); // no work order until resolved
-    const fu = await followUp(id);
-    expect(fu?.question).toMatch(/different Riverbend location|confirm/i); // confirmation question queued
-    // The request stays under Downtown (origin) — never silently moved to Lakeshore.
+    expect((await state(id)).state).toBe('ordered'); // ordered under Downtown, NOT needs_review
+    expect(await orderCount(id)).toBe(1);
+    // Ownership stays Downtown (origin) — the "Lakeshore" mention is ignored for routing.
     const owner = await t.db.adminQuery<{ shop_id: string }>(`SELECT m.shop_id FROM requests r JOIN messages m ON m.id=r.message_id WHERE r.id=$1`, [id]);
     expect(owner.rows[0]!.shop_id).toBe(downtown);
   });

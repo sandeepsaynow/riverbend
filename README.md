@@ -26,7 +26,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
   reconciles exactly to LiteLLM's own team logs; cumulative $0.036, well under the $20 cap). See
   **[TESTING & EVALUATION](#testing--evaluation)** below.
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
-  (Docker required); **234 passing**.
+  (Docker required); **237 passing**.
 - **Deploy to GCP (one script, any project):** `make gcp-check ENV=staging` → `make gcp-deploy ENV=staging`
   → `make gcp-bootstrap-admin ENV=staging` → `make gcp-test ENV=staging` → `make gcp-destroy ENV=staging CONFIRM=yes`.
   Full guide: **[`docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`](docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md)**.
@@ -104,46 +104,37 @@ de-duplicate (Message-ID), and resume the pipeline:
    `POST <public-url>/webhooks/resend` (Svix-verified). Pushes `email.received` immediately. May run
    alongside polling (Message-ID dedup → one effect).
 
-**New inbound email → new work order (D25).** A brand-new customer email (no reply token) creates a **new**
-request, attributed to the shop that owns the **verified destination address** — never the sender. The map
-is `shops.inbound_address`, set to `<slug>@$RESEND_INBOUND_DOMAIN` by the **auto-provisioning on api boot**
-(falls back to `RESEND_REPLY_DOMAIN`; set `RESEND_INBOUND_DOMAIN` to your verified receiving domain in
-production). An email to an unknown or ambiguous
-recipient is safely ignored; duplicates collapse by Message-ID. This is distinct from a reply (above), which
-resumes an existing request. Covered by `tests/integration/email-new-inbound.test.ts`.
+**New inbound email → new work order (D25→D32).** A brand-new customer email (no reply token) creates a **new**
+request. The shop is resolved from the message **content** (never the sender); if it can't be resolved it goes
+to **pending-intake** (clarification + reply-resume, below) rather than being dropped. Duplicates collapse by
+Message-ID. This is distinct from a reply (above), which resumes an existing request. Covered by
+`tests/integration/email-new-inbound.test.ts`. See **Source-aware tenant routing (D32)** below.
 
-**Receiving addresses + email test (D30, verified live 2026-11-06).** Shops are provisioned on the managed
-Resend receiving domain, so customers email **any sender → the shop address**:
+**Source-aware tenant routing (D32).** One generic receiving address; **code — never the LLM — assigns the
+tenant**, decided once at intake (the pipeline never re-routes):
 
-| Shop | Receiving address |
-|---|---|
-| rb-downtown | `rb-downtown@karoiechou.resend.app` |
-| rb-northside | `rb-northside@karoiechou.resend.app` |
-| rb-lakeshore | `rb-lakeshore@karoiechou.resend.app` |
+- **One generic address:** customers email a single public address, e.g. **`sandeepsudhagani@karoiechou.resend.app`**
+  (`RESEND_INBOUND_DOMAIN=karoiechou.resend.app`). It maps to no shop; the shop is resolved from the message.
+- **Email → shop from content:** "flat tire repaired at **Northside**" → Northside. Resolved deterministically
+  (regex vs the three shops), validated in code; **exactly one** named shop routes.
+- **Missing / ambiguous / contradictory shop → pending-intake:** the email is held in the system
+  `pending_inbound_email` table (no `shop_id`, no RLS weakened — no LLM runs pre-tenant), a worker sends **one**
+  reply-safe shop-clarification, and the customer's reply resolves the shop → the order is then created from the
+  original message. No work order until resolved; nothing dropped.
+- **Web form / `/v1` API: origin shop is the PERMANENT tenant** — shop mentions in the body or later replies are
+  ignored for routing (Downtown form saying "I'll come to Northside" → still a **Downtown** order). No
+  shop-mismatch email; only missing REPAIR details prompt a clarification. Requests are never transferred.
+- **Replies keep their established shop** (signed `reply+<token>`); a later shop mention never re-routes.
+- **Reply safety:** no auto-replies to `no-reply@`/`mailer-daemon@`/`postmaster@`/list senders (loop-safe);
+  ≤1 reply per request/pending row. **Only one environment polls** the shared Resend inbox
+  (`RESEND_POLLING_ENABLED=false` on the other). Sending a brand-new test email needs a verified Resend sending
+  domain (sandbox only sends to the account owner).
 
-Set `RESEND_INBOUND_DOMAIN=karoiechou.resend.app` and the addresses are applied on the next api boot
-(auto-provision; any local-part on that managed domain routes to the account; routing uses the **recipient
-address only**, never the email body/sender). A
-real Gmail → Resend → poll → **gpt-5.4-mini** email was processed end-to-end into a `FLAT_FIX + CHAIN_REPLACE`
-($60) work order. **Reply safety (D30):** automated replies to `no-reply@`/`mailer-daemon@`/`postmaster@`/
-list senders are suppressed (parked `needs_review`) to avoid bounce loops; replies stay ≤1 per request.
-**Only one environment should poll** the shared Resend inbox at a time (`RESEND_POLLING_ENABLED=false` on the
-other). To send a test email you need a verified Resend sending domain (sandbox only sends to the account owner).
-
-**Source-aware tenant routing (D31).** Code — never the LLM — assigns the tenant:
-- **Web form:** the shop whose form it came through is **authoritative**. If the text names a *different* shop,
-  the customer is emailed a confirmation and the request stays **pending** (no order, no silent tenant move);
-  unresolved → `needs_review`.
-- **Email to a shop-specific address** (`rb-downtown@…`): authoritative by recipient; the body is never used
-  for routing.
-- **Email to a generic address** (e.g. `sandeepsudhagani@karoiechou.resend.app`): routed by **content** —
-  "flat tire repaired at **Northside**" → Northside. Resolved deterministically in code and validated against
-  the three shops; **exactly one** named shop routes, zero/ambiguous is safely parked (never guessed).
-- **Replies** keep their established shop (signed `reply+<token>`); content never re-routes a conversation.
-
-Verified: web-mismatch, generic-explicit-shop, missing-shop, ambiguous-shop, shop-specific-address, and
-duplicate delivery are covered by real-Postgres integration tests; the real received email ("…to Downtown")
-resolves to rb-downtown live.
+Earlier D30/D31 per-shop receiving addresses (`rb-<slug>@karoiechou.resend.app`) still work if explicitly set
+but are **no longer the model** — content routing + pending-intake replace them. A real Gmail → Resend → poll →
+**gpt-5.4-mini** email was processed end-to-end into a `FLAT_FIX + CHAIN_REPLACE` ($60) work order (D30 live).
+The ten D32 cases (per-shop mentions, no-shop/ambiguous/contradictory → clarification → reply → order,
+web-permanent, duplicate, loop-safety) are covered by real-Postgres integration tests.
 
 This exercises the **real Resend provider API** (list + retrieve); it is provider-API integration testing,
 distinct from complete customer-email delivery (which needs a verified sending domain). See
@@ -262,7 +253,7 @@ npm run lint        # dependency-cruiser module boundaries
 npm test            # Vitest: unit + contract + real-PostgreSQL integration (Testcontainers; needs Docker)
 ```
 
-Current suite: **234 passing** (unit + contract + real-Postgres integration). CI additionally runs
+Current suite: **237 passing** (unit + contract + real-Postgres integration). CI additionally runs
 gitleaks and `terraform validate` ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 ## The guarantees (invariants)

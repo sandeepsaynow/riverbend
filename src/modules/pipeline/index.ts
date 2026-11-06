@@ -2,7 +2,7 @@ import type { Db } from '../../platform/db/index.js';
 import { AiPausedError, BudgetExceededError, type LlmGateway } from '../../platform/llm/index.js';
 import { BudgetService } from '../budget/index.js';
 import { decide } from './decide.js';
-import { detectShopMismatch, hasBroadDelegation, hasMultiBikeSignal, shopToken } from './guards.js';
+import { hasBroadDelegation, hasMultiBikeSignal } from './guards.js';
 import { ExtractionInvalid, validateExtraction, type Extraction } from './schema.js';
 export { PER_WHEEL } from './decide.js';
 
@@ -68,32 +68,16 @@ export class PipelineService {
     const row = loaded.rows[0];
     if (!row || TERMINAL.has(row.state)) return; // unknown or already decided (idempotent)
 
-    // Follow-up context (alreadyAsked + the reply text, if any) — needed by the mismatch guard too.
+    // D32: tenant ownership is fixed at intake (web/api origin is permanent; email is content-routed or held
+    // pending before a tenant exists). The pipeline NEVER re-routes or transfers on a shop mention — the old
+    // deterministic shop-mismatch guard (m-1009) is removed; a different-shop reference is treated as a normal
+    // repair for the origin shop. Only genuine REPAIR gaps prompt a clarification (via decide → 'ask').
+
+    // Follow-up context (alreadyAsked + the reply text, if any).
     const fu = await this.db.withTenant(shopId, (c) =>
       c.query<{ reply_content: string | null }>(`SELECT reply_content FROM follow_ups WHERE request_id = $1`, [requestId]),
     );
     const alreadyAsked = fu.rows.length > 0;
-
-    // Shop-mismatch guard (m-1009 / D31): if the message explicitly addresses a DIFFERENT Riverbend shop,
-    // act BEFORE any model call — never create an order, never transfer tenants. For a WEB form the origin
-    // shop is authoritative, so on the first pass we ASK the customer to confirm and keep the request pending
-    // (awaiting_customer). A second unresolved round, or any non-web channel, routes to a human (needs_review)
-    // for an authorized transfer or a new request.
-    const shopRow = await this.db.withTenant(shopId, (c) => c.query<{ slug: string }>(`SELECT slug FROM shops WHERE id = $1`, [shopId]));
-    const allShops = await this.db.adminQuery<{ slug: string }>(`SELECT slug FROM shops`);
-    const currentToken = shopToken(shopRow.rows[0]?.slug ?? '');
-    const allTokens = allShops.rows.map((s) => shopToken(s.slug));
-    if (detectShopMismatch(row.content, currentToken, allTokens)) {
-      if (row.source === 'web' && !alreadyAsked) {
-        await this.insertFollowUp(shopId, requestId,
-          'Your message mentions a different Riverbend location than the one you submitted through. ' +
-          "We won't start any work until you confirm — just reply to let us know whether to handle this here or at the other shop.");
-        await this.setState(shopId, requestId, 'awaiting_customer');
-        return;
-      }
-      await this.setStateWithError(shopId, requestId, 'needs_review', 'wrong_shop_suspected');
-      return;
-    }
     let content = row.content;
     const hasReply = alreadyAsked && !!fu.rows[0]!.reply_content;
     if (hasReply) content = `${content}\n${fu.rows[0]!.reply_content}`;
@@ -184,7 +168,7 @@ export class PipelineService {
       extraction = { ...extraction, bikes: [extraction.bikes[0]!] };
     }
 
-    const decision = decide(extraction, alreadyAsked, row.source);
+    const decision = decide(extraction, alreadyAsked);
     const flagged = decision.outcome === 'extracted' && decision.flagged;
     const bikes = flagged
       ? [{ bikeNumber: 1, issues: extraction.bikes.flatMap((b) => b.issues), serviceCodes: ['GENERAL_INSPECT'] }]

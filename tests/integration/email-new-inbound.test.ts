@@ -4,6 +4,7 @@ import { IntakeService } from '../../src/modules/intake/index.js';
 import { ShopsService } from '../../src/modules/shops/index.js';
 import { EmailService } from '../../src/modules/email/index.js';
 import { mintReplyToken } from '../../src/modules/email/tokens.js';
+import { InMemoryEmailTransport } from '../../src/modules/email/transport.js';
 import type { ReceivingClient, ReceivedEmail } from '../../src/modules/email/receiving.js';
 
 // 006/D25 — a brand-NEW inbound customer email (no reply token) must create a new request, attributed to
@@ -87,7 +88,7 @@ describe('006/D25 new inbound email → new request', () => {
   });
 
   it('an unknown/unconfigured recipient creates nothing (safe ignore — no tenant to attribute)', async () => {
-    expect(await email.handleInbound({ providerMessageId: '<u-1@mail>', toAddress: 'nobody@rb.inbound.test', toAddresses: ['nobody@rb.inbound.test'], text: 'hello?' })).toBe('unmatched');
+    expect(await email.handleInbound({ providerMessageId: '<u-1@mail>', toAddress: 'nobody@rb.inbound.test', toAddresses: ['nobody@rb.inbound.test'], text: 'hello?' })).toBe('pending'); // D32: held for shop clarification, not dropped (no order)
   });
 
   it('an email addressed to two different shops is ambiguous → safe ignore, nothing created', async () => {
@@ -149,14 +150,14 @@ describe('006/D31 generic-address email → content-based tenant routing (code-v
     expect(await requestCount(dt.id)).toBe(0); // NOT the other shop
   });
 
-  it('a generic recipient with NO shop named → unmatched (safe park, no tenant assigned)', async () => {
+  it('a generic recipient with NO shop named → pending (held for clarification, no tenant assigned)', async () => {
     const mail = { providerMessageId: '<d31-2@mail>', toAddress: 'hello@karoiechou.resend.app', toAddresses: ['hello@karoiechou.resend.app'], text: 'My bike needs a tune-up, can you help?', from: 'alex@gmail.com' };
-    expect(await email.handleInbound(mail)).toBe('unmatched');
+    expect(await email.handleInbound(mail)).toBe('pending'); // D32
   });
 
-  it('a generic recipient naming TWO shops → ambiguous → unmatched (never guessed)', async () => {
+  it('a generic recipient naming TWO shops → ambiguous → pending (never guessed)', async () => {
     const mail = { providerMessageId: '<d31-3@mail>', toAddress: 'hello@karoiechou.resend.app', toAddresses: ['hello@karoiechou.resend.app'], text: 'Should I go to Downtown or Northside for a flat fix?', from: 'alex@gmail.com' };
-    expect(await email.handleInbound(mail)).toBe('unmatched');
+    expect(await email.handleInbound(mail)).toBe('pending'); // D32
   });
 
   it('a shop-specific recipient address is authoritative even if the body names another shop', async () => {
@@ -165,5 +166,82 @@ describe('006/D31 generic-address email → content-based tenant routing (code-v
     const mail = { providerMessageId: '<d31-4@mail>', toAddress: 'rb-downtown-x@karoiechou.resend.app', toAddresses: ['rb-downtown-x@karoiechou.resend.app'], text: 'Flat tire — I usually go to Northside but sending here.', from: 'alex@gmail.com' };
     expect(await email.handleInbound(mail)).toBe('accepted');
     expect(await requestCount(dt2.id)).toBe(1); // routed by the trusted recipient address, not the body
+  });
+});
+
+describe('006/D32 pending-intake: generic address → content shop resolution + clarification/resume', () => {
+  async function ensureShop(slug: string): Promise<string> {
+    const existing = await t.db.adminQuery<{ id: string }>(`SELECT id FROM shops WHERE slug=$1`, [slug]);
+    if (existing.rows[0]) return existing.rows[0].id;
+    return (await shops.createShop({ slug, timeZone: 'America/Chicago' })).id;
+  }
+  const reqCountBySlug = async (slug: string) => {
+    const r = await t.db.adminQuery<{ n: string }>(
+      `SELECT count(*)::text AS n FROM requests rq JOIN messages m ON m.id=rq.message_id JOIN shops s ON s.id=m.shop_id WHERE s.slug=$1 AND m.source='email'`, [slug]);
+    return Number(r.rows[0]!.n);
+  };
+  const GENERIC = { toAddress: 'sandeepsudhagani@karoiechou.resend.app', toAddresses: ['sandeepsudhagani@karoiechou.resend.app'] };
+
+  it('generic email mentioning each shop → an order for THAT shop (Downtown/Northside/Lakeshore)', async () => {
+    const dt = await ensureShop('rb-downtown'); const ns = await ensureShop('rb-northside'); const lk = await ensureShop('rb-lakeshore');
+    const b0 = { dt: await reqCountBySlug('rb-downtown'), ns: await reqCountBySlug('rb-northside'), lk: await reqCountBySlug('rb-lakeshore') };
+    expect(await email.handleInbound({ ...GENERIC, providerMessageId: '<d32-dt@mail>', from: 'c@x.com', text: 'Flat tire fix at Downtown please.' })).toBe('accepted');
+    expect(await email.handleInbound({ ...GENERIC, providerMessageId: '<d32-ns@mail>', from: 'c@x.com', text: 'Tune-up at Northside please.' })).toBe('accepted');
+    expect(await email.handleInbound({ ...GENERIC, providerMessageId: '<d32-lk@mail>', from: 'c@x.com', text: 'Brake bleed at Lakeshore please.' })).toBe('accepted');
+    expect(await reqCountBySlug('rb-downtown')).toBe(b0.dt + 1);
+    expect(await reqCountBySlug('rb-northside')).toBe(b0.ns + 1);
+    expect(await reqCountBySlug('rb-lakeshore')).toBe(b0.lk + 1);
+    void dt; void ns; void lk;
+  });
+
+  it('generic email with NO shop → pending (no order), clarification sent once, reply resolves the shop → order', async () => {
+    const before = await reqCountBySlug('rb-northside');
+    const r = await email.handleInbound({ ...GENERIC, providerMessageId: '<d32-pend@mail>', from: 'rider@gmail.com', text: 'Hi, my bike needs a tune-up — can you help?' });
+    expect(r).toBe('pending');
+    const pend = await t.db.adminQuery<{ id: string; state: string; reason: string }>(`SELECT id, state, reason FROM pending_inbound_email WHERE provider_message_id='<d32-pend@mail>'`);
+    expect(pend.rows[0]!.state).toBe('awaiting_shop');
+    expect(pend.rows[0]!.reason).toBe('no_shop');
+    expect(await reqCountBySlug('rb-northside')).toBe(before); // no order yet
+
+    // clarification sweep sends one email to THIS sender with a reply+<pendingToken> address
+    const transport = new InMemoryEmailTransport();
+    await email.relayPendingClarifications(transport);
+    const sent = transport.sent.find((e) => e.to === 'rider@gmail.com');
+    expect(sent, 'clarification sent to the pending sender').toBeDefined();
+    const token = /reply\+([^@]+)@/.exec(sent!.replyTo ?? '')![1]!;
+    // a second sweep does NOT re-send to this sender (bounded via clarify_sent → no loop)
+    const transport2 = new InMemoryEmailTransport();
+    await email.relayPendingClarifications(transport2);
+    expect(transport2.sent.some((e) => e.to === 'rider@gmail.com')).toBe(false);
+
+    // customer replies naming the shop → resolves → creates the Northside request from the ORIGINAL body
+    const reply = await email.handleInbound({ toAddress: `reply+${token}@rb.resend.app`, toAddresses: [`reply+${token}@rb.resend.app`], providerMessageId: '<d32-pend-reply@mail>', from: 'rider@gmail.com', text: 'Northside, thanks!' });
+    expect(reply).toBe('accepted');
+    void before;
+    // The created request is under Northside, source=email, keyed on the ORIGINAL message id, original body.
+    const created = await t.db.adminQuery<{ slug: string; content: string }>(
+      `SELECT s.slug, m.content FROM messages m JOIN shops s ON s.id=m.shop_id WHERE m.submission_id='<d32-pend@mail>' AND m.source='email'`);
+    expect(created.rows[0]!.slug).toBe('rb-northside');
+    expect(created.rows[0]!.content).toContain('tune-up');
+    const after = await t.db.adminQuery<{ state: string; shop: string | null }>(`SELECT state, resolved_shop_id::text AS shop FROM pending_inbound_email WHERE provider_message_id='<d32-pend@mail>'`);
+    expect(after.rows[0]!.state).toBe('resolved');
+    expect(after.rows[0]!.shop).not.toBeNull();
+  });
+
+  it('generic email mentioning TWO shops → pending (ambiguous), no premature order', async () => {
+    const r = await email.handleInbound({ ...GENERIC, providerMessageId: '<d32-amb@mail>', from: 'c@x.com', text: 'Should I bring it to Downtown or Lakeshore for a flat fix?' });
+    expect(r).toBe('pending');
+    const pend = await t.db.adminQuery<{ reason: string }>(`SELECT reason FROM pending_inbound_email WHERE provider_message_id='<d32-amb@mail>'`);
+    expect(pend.rows[0]!.reason).toBe('ambiguous_shop');
+  });
+
+  it('pending clarification to a no-reply/bounce sender is suppressed (abandoned, no email) — loop safety', async () => {
+    await email.handleInbound({ ...GENERIC, providerMessageId: '<d32-noreply@mail>', from: 'no-reply@newsletter.com', text: 'Unsubscribe me' });
+    const transport = new InMemoryEmailTransport();
+    await email.relayPendingClarifications(transport);
+    // No clarification is sent TO the no-reply sender (other pending rows from sibling tests may still send).
+    expect(transport.sent.some((e) => e.to === 'no-reply@newsletter.com')).toBe(false);
+    const pend = await t.db.adminQuery<{ state: string }>(`SELECT state FROM pending_inbound_email WHERE provider_message_id='<d32-noreply@mail>'`);
+    expect(pend.rows[0]!.state).toBe('abandoned'); // suppressed, parked — never emailed
   });
 });

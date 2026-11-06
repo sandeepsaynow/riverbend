@@ -7,8 +7,12 @@ function ex(partial: Partial<Extraction>): Extraction {
 }
 
 describe('decision logic (D5, I6) — code decides, not the model', () => {
-  it('wrong shop → needs_review (never auto-moved)', () => {
-    expect(decide(ex({ kind: 'wrong_shop' }), false)).toEqual({ outcome: 'needs_review', reason: 'wrong_shop_suspected' });
+  it('D32: wrong_shop is NOT a routing signal — treated as a normal message for the origin shop', () => {
+    // no service named → ask for repair details (never needs_review, never a tenant move)
+    expect(decide(ex({ kind: 'wrong_shop' }), false).outcome).toBe('ask');
+    // a service named → extract an order for the ORIGIN shop regardless of the shop mention
+    expect(decide(ex({ kind: 'wrong_shop', bikes: [{ bikeNumber: 1, issues: ['tune'], serviceCodes: ['TUNE_BASIC'] }] }), false))
+      .toEqual({ outcome: 'extracted', flagged: false });
   });
   it('price inquiry → answered, no order', () => {
     expect(decide(ex({ kind: 'price_inquiry' }), false)).toEqual({ outcome: 'answered' });

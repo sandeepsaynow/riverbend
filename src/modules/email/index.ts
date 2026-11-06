@@ -1,5 +1,5 @@
 import type { Db } from '../../platform/db/index.js';
-import { mintReplyToken, readReplyToken } from './tokens.js';
+import { mintReplyToken, mintPendingToken, readReplyToken, PENDING_SHOP_SENTINEL } from './tokens.js';
 import { PermanentSendError, type EmailTransport } from './transport.js';
 import type { ReceivingClient, ReceivingLister } from './receiving.js';
 
@@ -22,7 +22,7 @@ export interface EmailConfig {
   maxSendAttempts?: number; // bounded outbound retry before needs_review (default 5)
 }
 
-export type InboundResult = 'accepted' | 'duplicate' | 'unmatched' | 'ignored_not_awaiting';
+export type InboundResult = 'accepted' | 'duplicate' | 'unmatched' | 'ignored_not_awaiting' | 'pending';
 export type EventResult = 'processed' | 'ignored' | 'error';
 
 export interface InboundEmail {
@@ -346,9 +346,75 @@ export class EmailService {
     if (token) {
       const correlated = readReplyToken(this.cfg.signingKey, token);
       if (!correlated) return 'unmatched'; // invalid/expired reply token → fail safe, never a new order
+      // D32: a pending-intake clarification reply (zero-shop sentinel) → resolve the shop, then create the
+      // tenant request. A normal reply (real shopId) resumes the existing request.
+      if (correlated.shopId === PENDING_SHOP_SENTINEL) return this.resolvePendingReply(correlated.requestId, input);
       return this.resumeReply(correlated.shopId, correlated.requestId, input);
     }
     return this.handleNewInbound(input);
+  }
+
+  /**
+   * D32: resolve a PENDING inbound email (shop not yet known) from the customer's clarification reply. The
+   * shop is resolved deterministically in CODE from the reply + the original body; on exactly one match the
+   * real tenant request is created (replaying the ORIGINAL message) and the pending row is marked resolved.
+   * Still unresolved → stays pending (bounded: no second clarification). Never assigns a tenant by guess.
+   */
+  private async resolvePendingReply(pendingId: string, input: InboundEmail): Promise<InboundResult> {
+    if (!this.router?.resolveShopByContent || !this.intake) return 'unmatched';
+    const p = await this.db.adminQuery<{ provider_message_id: string; from_email: string | null; body: string; state: string }>(
+      `SELECT provider_message_id, from_email, body, state FROM pending_inbound_email WHERE id = $1`, [pendingId]);
+    const row = p.rows[0];
+    if (!row || row.state !== 'awaiting_shop') return 'ignored_not_awaiting'; // already resolved/abandoned → idempotent no-op
+    const replyText = normalizeBody(input.text, input.html);
+    const matched = await this.router.resolveShopByContent(`${replyText}\n${row.body}`);
+    if (matched.length !== 1) return 'pending'; // still missing/ambiguous → remain pending (one-round bound)
+    const shopId = matched[0]!;
+    const res = await this.intake.submit({
+      shopId, source: 'email', submissionId: row.provider_message_id, content: row.body,
+      ...(row.from_email ? { customerEmail: row.from_email } : {}),
+    });
+    await this.db.adminQuery(
+      `UPDATE pending_inbound_email SET state='resolved', resolved_shop_id=$2, resolved_request_id=$3, updated_at=now() WHERE id=$1`,
+      [pendingId, shopId, res.requestId],
+    );
+    return res.duplicate ? 'duplicate' : 'accepted';
+  }
+
+  /**
+   * D32: send ONE shop-clarification for each pending-intake email awaiting a shop (worker sweep, like
+   * relayPending). Reply-safe (no no-reply/bounce/list senders, FR-020) and bounded (clarify_sent flag → at
+   * most one clarification per pending row → no loops/duplicates). The reply correlates via a pending token.
+   */
+  async relayPendingClarifications(transport: EmailTransport, limit = 20): Promise<{ sent: number; skipped: number }> {
+    const rows = await this.db.adminQuery<{ id: string; from_email: string | null }>(
+      `SELECT id, from_email FROM pending_inbound_email
+        WHERE state='awaiting_shop' AND clarify_sent = false
+        ORDER BY created_at LIMIT $1`, [limit]);
+    let sent = 0, skipped = 0;
+    for (const row of rows.rows) {
+      if (isNoReplyOrAuto(row.from_email)) { // never reply to a no-reply/bounce/list sender (loop safety)
+        await this.db.adminQuery(`UPDATE pending_inbound_email SET state='abandoned', clarify_sent=true, updated_at=now() WHERE id=$1`, [row.id]);
+        skipped += 1; continue;
+      }
+      const token = mintPendingToken(this.cfg.signingKey, row.id);
+      const subject = 'Which Riverbend location is this for?';
+      const body = 'Thanks for your message! We have three locations — Downtown, Northside, and Lakeshore. ' +
+        'Just reply with the one you want and we\'ll get your bike booked in.';
+      try {
+        await transport.send({
+          to: row.from_email!, subject, body,
+          html: `<p>${escapeHtml(body)}</p>`,
+          replyTo: `reply+${token}@${this.cfg.replyDomain}`,
+          headers: { 'X-Riverbend-Pending': row.id },
+        });
+        await this.db.adminQuery(`UPDATE pending_inbound_email SET clarify_sent=true, attempts=attempts+1, updated_at=now() WHERE id=$1`, [row.id]);
+        sent += 1;
+      } catch {
+        await this.db.adminQuery(`UPDATE pending_inbound_email SET attempts=attempts+1, updated_at=now() WHERE id=$1`, [row.id]);
+      }
+    }
+    return { sent, skipped };
   }
 
   /**
@@ -383,12 +449,23 @@ export class EmailService {
       // A shop-specific recipient address is AUTHORITATIVE — the body is never used for routing (FR-013).
       shopId = [...shopIds][0]!;
     } else {
-      // D31: a GENERIC recipient (maps to no shop, e.g. a catch-all/account address) → resolve the tenant
-      // from the body, deterministically in CODE (the LLM never assigns a tenant). Route ONLY on exactly one
-      // named shop; 0 or >1 is missing/ambiguous and is safely parked (never guessed, never cross-tenant).
+      // D31/D32: a GENERIC recipient (the single public address, mapping to no shop) → resolve the tenant
+      // from the body, deterministically in CODE (the LLM never assigns a tenant — and no LLM runs pre-tenant,
+      // so there is no pre-tenant inference spend/abuse vector). Route ONLY on exactly one named shop.
       if (!this.router.resolveShopByContent) return 'unmatched';
       const matched = await this.router.resolveShopByContent(body);
-      if (matched.length !== 1) return 'unmatched'; // missing or ambiguous shop → safe park (no tenant assigned)
+      if (matched.length !== 1) {
+        // D32: missing (0) or ambiguous/contradictory (>1) shop → PENDING-INTAKE, not dropped. Record the
+        // email in the no-tenant triage table; a worker sweep sends ONE shop-clarification; the customer's
+        // reply resolves the shop and creates the real tenant request. No work order until resolved.
+        const reason = matched.length === 0 ? 'no_shop' : 'ambiguous_shop';
+        await this.db.adminQuery(
+          `INSERT INTO pending_inbound_email (provider_message_id, from_email, body, reason)
+           VALUES ($1,$2,$3,$4) ON CONFLICT (provider_message_id) DO NOTHING`,
+          [messageId, input.from ?? null, body, reason],
+        );
+        return 'pending';
+      }
       shopId = matched[0]!;
     }
 
