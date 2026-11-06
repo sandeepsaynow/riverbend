@@ -64,7 +64,7 @@ cmd_deploy() {
   echo "-- Artifact Registry --"; gcloud artifacts repositories describe "$REPO" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1 || gcloud artifacts repositories create "$REPO" --repository-format=docker --location="$REGION" --project="$PROJECT"
   echo "-- build images (Cloud Build) --"
   gcloud builds submit --tag "$AR/app:latest" --project="$PROJECT" "$ROOT"
-  gcloud builds submit --config "$ROOT/scripts/gcp/cloudbuild.litellm.yaml" --project="$PROJECT" "$ROOT"
+  gcloud builds submit --config "$ROOT/scripts/gcp/cloudbuild.litellm.yaml" --substitutions _AR="$AR" --project="$PROJECT" "$ROOT"
   APP_IMG="$AR/app:latest"; LLM_IMG="$AR/litellm:latest"
   echo "-- service accounts --"; for sa in rb-api rb-worker rb-litellm; do gcloud iam service-accounts describe "$sa@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" >/dev/null 2>&1 || gcloud iam service-accounts create "$sa" --project="$PROJECT"; done
   echo "-- Cloud SQL ($DB_TIER) --"
@@ -110,13 +110,13 @@ cmd_deploy() {
   AU="$(apiurl)"; echo "   API URL: $AU"
   gcloud run services update rb-api --region "$REGION" --project "$PROJECT" --update-env-vars "BETTER_AUTH_URL=$AU,WEB_ALLOWED_ORIGINS=$AU" >/dev/null
   echo "-- deploy worker (+litellm sidecar) --"
-  ENV_SUB_IMG_APP="$APP_IMG" ENV_SUB_IMG_LLM="$LLM_IMG" ENV_SUB_CONN="$CONN" ENV_SUB_WMIN="$WORKER_MIN" \
+  PROJECT="$PROJECT" REGION="$REGION" ENV_SUB_IMG_APP="$APP_IMG" ENV_SUB_IMG_LLM="$LLM_IMG" ENV_SUB_CONN="$CONN" ENV_SUB_WMIN="$WORKER_MIN" RESEND_REPLY_DOMAIN="${RESEND_REPLY_DOMAIN:-riverbend.example}" \
     bash "$ROOT/scripts/gcp/render-worker.sh" >/tmp/rb-worker.gen.yaml
   gcloud run services replace /tmp/rb-worker.gen.yaml --region "$REGION" --project "$PROJECT"
   echo "-- public invoker on API (app-layer auth still enforced) --"
   gcloud run services add-iam-policy-binding rb-api --region "$REGION" --project "$PROJECT" --member=allUsers --role=roles/run.invoker >/dev/null
   echo "-- migrations run at API boot; provisioning shops --"; proxy_up
-  DATABASE_ADMIN_URL="postgresql://app_admin:${ADMIN_PW}@127.0.0.1:${PXPORT}/riverbend" RESEND_REPLY_DOMAIN="${RESEND_REPLY_DOMAIN:-riverbend.example}" npx --prefix "$ROOT" tsx "$ROOT/scripts/provision.ts" || true
+  ( cd "$ROOT" && DATABASE_ADMIN_URL="postgresql://app_admin:${ADMIN_PW}@127.0.0.1:${PXPORT}/riverbend" RESEND_REPLY_DOMAIN="${RESEND_REPLY_DOMAIN:-riverbend.example}" npx tsx scripts/provision.ts ) || echo "   (provision step reported an issue — re-run: make gcp-deploy, or provision manually)"
   proxy_down
   echo "DONE. Public URL: $AU   Next: make gcp-bootstrap-admin ENV=$ENVNAME"
 }

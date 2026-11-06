@@ -12,6 +12,9 @@ steps:
 images:
   - ${_AR}/litellm:latest
 substitutions:
-  _AR: ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/riverbend
+  # _AR is passed explicitly by the deploy script (--substitutions _AR=<region>-docker.pkg.dev/<project>/riverbend).
+  # Not derived from ${LOCATION} because that is not a built-in Cloud Build substitution.
+  _AR: ""
 options:
   logging: CLOUD_LOGGING_ONLY
+  substitution_option: ALLOW_LOOSE

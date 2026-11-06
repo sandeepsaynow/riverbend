@@ -4,13 +4,15 @@
 read back from the live services, Cloud SQL, or LiteLLM's own DB — nothing is asserted from Terraform success
 alone. Secrets are never printed here.
 
-> **STATUS: TORN DOWN 2026-11-06 (no resources currently running).** After verification, all Riverbend
-> resources were deleted to avoid charges — Cloud Run (api/worker/litellm), Cloud SQL `riverbend-pg`, all 11
-> secrets, the `riverbend` Artifact Registry repo, the 3 `rb-*` service accounts, and the Cloud Build staging
-> bucket. The **project `riverbend-staging` and its billing association are preserved.** The DB held only
-> synthetic test data (no backup needed). This report is retained as **evidence of what was verified**; to
-> reproduce the environment, run `make gcp-deploy ENV=staging` (see `docs/GCP_PRODUCTION_DEPLOYMENT_GUIDE.md`).
-> The public URLs below no longer resolve.
+> **STATUS: RUNNING — REDEPLOYED 2026-11-06 via `make gcp-deploy` (reproducibility verified).** The
+> environment was torn down once, then **rebuilt from scratch by running only the documented commands**
+> (`make gcp-check` → `gcp-deploy` → `gcp-bootstrap-admin` → `gcp-test`) to prove a new developer can deploy
+> without guesswork. It completed exit 0 with **no undocumented manual steps** after three script bugs were
+> fixed (see §12). Re-verified live: public access, customer→work-order via real gpt-5.4-mini
+> (TUNE_BASIC+CHAIN_REPLACE $110), admin bootstrap (201) + login (302) + staff-management page (200). It is
+> **left running** per request — ongoing cost ≈ $25–35/mo (see §9); tear down with
+> `make gcp-destroy ENV=staging CONFIRM=yes`. The current public URL is `https://rb-api-rralynv5pq-uc.a.run.app`
+> (the project-number URLs from the first deploy no longer resolve).
 
 ## 1. Environment
 
@@ -154,3 +156,22 @@ gcloud artifacts repositories delete riverbend --location us-central1 --project 
 # Fastest full teardown (removes everything + billing exposure):
 gcloud projects delete riverbend-staging
 ```
+
+## 12. Reproducibility test (2026-11-06) — gaps found & fixed
+
+Ran `make gcp-deploy ENV=staging` from a clean state following only the README + deployment guide. Three
+script bugs would have blocked a fresh developer; all fixed so the documented flow now works unmodified:
+
+1. **`render-worker.sh` didn't receive `PROJECT`** → the worker service YAML rendered
+   `serviceAccountName: rb-worker@.iam.gserviceaccount.com` (empty project) and the deploy would fail. Fixed:
+   `riverbend-gcp.sh` now exports `PROJECT`/`REGION` (and `RESEND_REPLY_DOMAIN`) into the render subshell.
+2. **`npx --prefix` in the shop-provisioning step** — `--prefix` is an `npm` flag, not `npx`; the step errored.
+   Fixed: `( cd "$ROOT" && npx tsx scripts/provision.ts )`.
+3. **Cloud Build `_AR` used `${LOCATION}`** — not a built-in Cloud Build substitution, so the LiteLLM image
+   path was malformed. Fixed: the deploy passes `--substitutions _AR=<region>-docker.pkg.dev/<project>/riverbend`
+   and `cloudbuild.litellm.yaml` uses `ALLOW_LOOSE`.
+
+After these fixes the full deploy ran **exit 0 end-to-end** (APIs → Artifact Registry → both images via Cloud
+Build → Cloud SQL + roles/dbs → 11 secrets → api (public) → worker+sidecar → migrations at boot → 3 shops),
+with **no manual intervention**. Secrets stay in the gitignored `scripts/gcp/deploy.staging.env` (provider keys
+filled from `.env`; signing keys + DB passwords generated and appended there, never printed or committed).

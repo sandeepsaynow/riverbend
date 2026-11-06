@@ -7,10 +7,10 @@ documentation. Legend: **PASS** (implemented + evidence) · **PARTIAL** (works, 
 **Production model (D26, 2026-11-06):** `openai/gpt-5.4-mini-2026-03-17` (upgraded from gpt-4o-mini; config-only
 rollback). See `docs/MODEL_COST_REPORT.md` and `docs/TEST_RESULTS.md`.
 
-**GCP status (2026-11-06):** staging was **deployed + end-to-end verified** (`riverbend-staging`) then **torn
-down** (no resources running; project + billing preserved) — reproduce with `make gcp-deploy ENV=staging`.
-Rows 21/25 "live staging" = verified-then-torn-down evidence, not a running environment. Production LB/HA shape
-is Terraform-validated, **not applied**.
+**GCP status (2026-11-06):** staging **deployed + end-to-end verified** (`riverbend-staging`), **reproducibility-
+verified** by rebuilding from scratch with only `make gcp-deploy` (exit 0, no manual steps, after 3 script fixes
+— report §12), and **currently running** (≈$25–35/mo; `make gcp-destroy` to remove). Production LB/HA shape is
+Terraform-validated, **not applied**.
 
 | # | Requirement | Actual implementation (evidence) | Tests | Live evidence | Verdict | Remaining gap |
 |--:|---|---|---|---|---|---|

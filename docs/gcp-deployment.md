@@ -10,8 +10,10 @@ two-process app — not a hand-run VM.
   cheaper native-Cloud-Run shape (see **[`docs/GCP_STAGING_DEPLOYMENT_REPORT.md`](GCP_STAGING_DEPLOYMENT_REPORT.md)**):
   public browser access, customer form → real gpt-5.4-mini → `$65` work order, tenant isolation (RLS),
   idempotency, admin/staff + staff-scoped isolation, auth, budget hold+recovery, restart durability — all passed
-  (email NOT VERIFIED, live LLM-outage not injected). **The staging resources were then TORN DOWN** to avoid
-  charges (project + billing preserved); reproduce any time with `make gcp-deploy ENV=staging`.
+  (email NOT VERIFIED, live LLM-outage not injected). **Reproducibility verified:** the environment was later
+  rebuilt from scratch by running only `make gcp-deploy ENV=staging` (exit 0, no manual steps, after 3 script
+  fixes — see report §12) and is currently **running** (≈$25–35/mo; `make gcp-destroy ENV=staging CONFIRM=yes`
+  to remove). Project + billing preserved throughout.
 - **Production (LB + domain + HA)** — Terraform-validated, **not applied**; production readiness is not claimed.
 
 The staging deploy surfaced and fixed real Terraform bugs (worker missing `ADMIN_BOOTSTRAP_TOKEN`/`LLM_MODEL`/
