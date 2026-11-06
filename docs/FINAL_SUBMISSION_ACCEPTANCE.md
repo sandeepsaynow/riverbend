@@ -29,7 +29,7 @@ documentation. Legend: **PASS** (implemented + evidence) · **PARTIAL** (works, 
 | 20 | Customer-visible status | signed status token → `/f/status/:token` (raw state) | `web` | — | **PASS** | raw state string; web-sourced only |
 | 21 | Worker runs on Cloud Run | **D25** health listener on `$PORT` + Terraform HTTP startup/liveness probe; real `start:worker`, `cpu_idle=false` | `worker-health` (3) | no live apply | **PASS** (config) | not live-applied (NOT VERIFIED #25) |
 | 22 | 40-message evaluation (deterministic) | `make eval` → `docs/results.md`; totals reconcile to 40 (32 orders/4 follow-ups/0 fail/1 ans/2 review/1 dup) | eval harness | — | **PASS** | drives services in-process (not pg-boss hop) |
-| 23 | **40-message LIVE-model run + measured spend** | `make eval-live` wired (real `x-litellm-response-cost`); historical live runs preserved (`results-live*.md`) | — | partial (D22/D23 single calls) | **NOT VERIFIED** | full-40 paid run not executed — needs OpenAI key + $20-cap headroom; not fabricated |
+| 23 | **40-message LIVE-model run + measured spend** | **EXECUTED 2026-11-06:** `make eval-live` → 40 msgs through real `openai/gpt-4o-mini`; 38 real calls, 36 ordered/1 answered/2 review/1 dup/0 fail, 28 140 tok, **$0.0052** (LiteLLM `/global/spend` $0.005185 corroborates), $2 014 value | `docs/results-live.md` | **live, measured** | **PASS** | model-variance divergences from golden on ambiguous msgs (documented) — deterministic run stays authoritative for regression |
 | 24 | ≤2-page architecture note | `docs/architecture.md` — Mermaid of actual components, boundaries, data model, RLS, 3 decisions | — | — | **PASS** | 86 lines / ~847 words (within 2 pages) |
 | 25 | GCP IaC + written plan | `infra/terraform/` (`fmt`+`validate` ✅) + `docs/gcp-deployment.md`; worker/litellm/IAM/WIF addressed | terraform CI | no `apply` | **PASS** (plan) / live **NOT VERIFIED** | no GCP project/authorization |
 | 26 | Not-built + 100-shop scaling | `docs/not-built.md` (cut / next / breaks-first, evidence-ranked) | — | — | **PASS** | scaling = hypotheses (stated) |
@@ -54,8 +54,9 @@ wiring, health server, held-budget recovery), `src/worker/sweeper.ts` (`recoverH
 
 ## Submission blockers (honest)
 
-- **P1 — live 40-message paid evaluation (#23):** not run; requires a usable OpenAI key + spend headroom
-  under the $20 cap. Deterministic run + historical live evidence stand; live full-40 is **NOT VERIFIED**.
+- ~~**P1 — live 40-message paid evaluation (#23):**~~ **RESOLVED 2026-11-06** — executed against real
+  `openai/gpt-4o-mini`, measured spend **$0.0052** (well under the $20 cap), 40/40 reconcile. See
+  `docs/results-live.md` + `docs/evaluation-results.md §Real-model`.
 - **P2 — live GCP apply (#25)** and **verified Resend sending domain (#27):** external access/authorization;
   IaC validates and code is tested, but neither was executed live.
 - **P2 — fine-grained failure visibility (#16/17)** and **soft-cap overshoot (#19):** documented limitations,

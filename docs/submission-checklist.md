@@ -13,8 +13,8 @@ inbound-email intake (D25), a Cloud Run worker health listener, `429`≠budget, 
 | 1 | Git repo with code + meaningful tests | **PASS** | 52+ commits on `main`, pushed to `github.com/sandeepsaynow/riverbend`; `npx vitest run` → **220 passed** (27 files, real PostgreSQL) | — |
 | 2 | One-command local startup | **PASS** | `docker compose up --build` (or `make up`); `docker compose config -q` + local overlay both valid; stack boots healthy (`/readyz`→ready, api+worker+db) verified in earlier live runs | host `:5432` conflict → use the local overlay (documented) |
 | 3 | Working demonstration | **PASS** | Live: customer form → catalog-priced work order; admin/staff login; cross-shop isolation; real-OpenAI order ($110 / $65). Deterministic by default (FakeGateway) | in-browser click-through (T054) is a manual step; guide in `FINAL_MANUAL_TEST.md` |
-| 4 | Reproducible 40-message evaluation | **PASS** | `make eval` (deterministic) regenerated `docs/results.md` this run; `make eval-live` (real OpenAI) available | real-model **full-40 not re-run** this submission (paid/bulk → gated); real evidence in `results-live.md` |
-| 5 | Results table (orders / follow-ups / failures / spend) | **PASS** | `docs/evaluation-results.md` + `docs/results.md`: 40 → **32 orders, 4 follow-ups, 0 failures**, 1 answered, 2 needs-review, 1 duplicate; $1,865 value; spend $0 real / est. $0.074 (deterministic, labelled) | real-model spend NOT re-measured here (see #4) |
+| 4 | Reproducible 40-message evaluation | **PASS** | Both modes run: `make eval` (deterministic) → `docs/results.md`; **`make eval-live` EXECUTED 2026-11-06** against real `openai/gpt-4o-mini` → `docs/results-live.md` (38 real OpenAI calls) | — |
+| 5 | Results table (orders / follow-ups / failures / spend) | **PASS** | **Live (measured):** 40 → **36 orders, 0 follow-ups, 0 failures**, 1 answered, 2 needs-review, 1 duplicate; $2,014 value; **real spend $0.0052** (LiteLLM `/global/spend` $0.005185 corroborates), 28,140 tokens. Deterministic: 32/4/0, $1,865, est. labelled. Both in `docs/evaluation-results.md` | live model varies ask-vs-extract on ambiguous msgs (documented); deterministic authoritative for regression |
 | 6 | ≤ 2-page architecture note | **PASS** | `docs/architecture.md` — Mermaid of **actual** components (no Next.js/Redis), module boundaries, data model, tenant isolation, 3 decisions to challenge | — |
 | 7 | "Not Built" document | **PASS** | `docs/not-built.md` — deliberately-omitted · build-next · top-3 breaks-at-100-shops (evidence-based) | scaling limits are hypotheses for load testing (stated) |
 | 8 | Realistic GCP deployment + IaC | **PASS** (plan+IaC) / live deploy **BLOCKED** | `infra/terraform/` (Cloud Run + Cloud SQL + HTTPS LB + Secret Manager + WIF-OIDC); `terraform fmt -check` + `validate` ✅; `docs/gcp-deployment.md` runbook | no live apply (no GCP project/authorization) — documented |
@@ -51,7 +51,7 @@ Postgres is real.
   excludes `.env`/`.env.*`/`node_modules`/`dist`/`*.log`.
 
 ## Remaining blockers (all external / out-of-scope, documented)
-- **Real-model full-40 eval** and **live GCP apply** need credentials/authorization (both gated; not run).
+- **Real-model full-40 eval** — **DONE 2026-11-06** (real `openai/gpt-4o-mini`, $0.0052 measured). **Live GCP apply** still needs a GCP project/authorization (gated; not run).
 - **Resend** real two-way delivery needs a verified sending domain (`docs/FINAL_MANUAL_TEST.md`).
 - **In-browser T054** smoke is a manual step (automated + live-API cover the invariants).
 - **Prod hardening** noted in `not-built.md` (restricted DB role for Better Auth, worker autoscaling, OTel).

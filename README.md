@@ -20,9 +20,12 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
   network); real OpenAI/Resend activate only when their keys are set (see Environment below). We do **not**
   fake real email/LLM.
 - **Evaluate the 40 sample messages:** `make eval` (deterministic) → writes `docs/results.md`; real-model
-  `make eval-live` (paid, gated). **Latest deterministic run:** 40 messages → **32 work orders, 4 follow-ups,
-  0 failures**, 1 price answer, 2 needs-review, 1 idempotent replay; total order value **$1,865** (model
-  spend $0 real / est. $0.074). Full report: [`docs/evaluation-results.md`](docs/evaluation-results.md).
+  `make eval-live` → `docs/results-live.md`. **Live run (2026-11-06, real `openai/gpt-4o-mini`):** 40 messages,
+  38 real OpenAI calls → **36 work orders, 0 follow-ups, 0 failures**, 1 price answer, 2 needs-review,
+  1 idempotent replay; order value **$2,014**; **measured spend $0.0052** (LiteLLM `/global/spend` corroborates;
+  well under the $20 cap). Deterministic run: 32/4/0, $1,865 (est. $0.074, labelled). On ambiguous messages the
+  live model extracts where the deterministic run asks a question, so the deterministic run stays authoritative
+  for regression. Full report: [`docs/evaluation-results.md`](docs/evaluation-results.md).
 - **Tests:** `npm test` (or `make test`) — unit + integration on **real PostgreSQL** via Testcontainers
   (Docker required); **220 passing**.
 - **Submission docs:** [architecture note](docs/architecture.md) (2-page, Mermaid) ·
@@ -225,12 +228,13 @@ reserve-then-settle **hard cap** for rollback or a shop that needs one. See [`do
 | 005 web form | per-shop form, mandatory email, defences, status page | ✅ |
 | 006 email | outbound question, inbound webhook/poll + content fetch, reply resumption, **new-inbound → new request by verified address (D25)**, dedupe, delivery status | ✅ (Resend, D21/D25) |
 | 007 resilience | per-call timeout, bounded pg-boss retry+DLQ, circuit breaker, per-shop bulkhead, AI-paused switch, **429≠budget + held_budget auto-recovery (D25)** | ✅ (core) |
-| 008 eval + deploy | 40-message eval + results.md; GCP Terraform (validated) | ✅ (deterministic eval + IaC; live eval + deploy gated) |
+| 008 eval + deploy | 40-message eval (deterministic **+ live real-model run, 2026-11-06**); GCP Terraform (validated) | ✅ (both evals run; live GCP deploy gated) |
 
 ## Not built / deferred (honest scope, IX)
 
-- **Live 40-message eval + real provider cost report** — gated on real LLM credentials (B1). The
-  harness + deterministic run exist; `make eval-live` runs the paid version.
+- ~~**Live 40-message eval + real provider cost report**~~ — **DONE 2026-11-06** (real `openai/gpt-4o-mini`
+  via LiteLLM; 38 real calls; measured spend **$0.0052**). Results in `docs/results-live.md`; run it yourself
+  with `docker compose --profile llm up -d db litellm && EVAL_LLM_BASE_URL=http://localhost:4000/v1 make eval-live`.
 - **LiteLLM-native budget as sole authority** — per-shop team/virtual-key provisioning + the
   concurrency-atomicity acceptance test; deferred because it cannot be validated without paid
   budget-exhaustion calls (legacy ledger remains authoritative).

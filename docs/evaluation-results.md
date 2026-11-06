@@ -99,15 +99,55 @@ the model; `—` where no call happens (short-circuited business outcomes). Full
 (Tricky-case notes — prompt injection, idempotent resend, wrong-shop, price inquiry, delegation,
 cancellation, Spanish, ambiguous — are in `docs/results.md §Tricky cases`.)
 
-## Real-model (OpenAI via LiteLLM)
+## Real-model (OpenAI via LiteLLM) — LIVE RUN MEASURED
 
-- **Not re-run as a bulk paid job for this submission** (bulk paid evaluation requires explicit approval).
-  Run it when authorized: `docker compose --profile llm up -d litellm && make eval-live` (keep aggregate
-  spend < the configured cap). It writes real tokens + the LiteLLM-calculated `x-litellm-response-cost`.
-- **Measured real-model evidence that exists:** `docs/results-live.md` (a prior authorized 40-message live
-  run + the dated post-fix single-message re-run for **m-1038** under D23) and `docs/results-live-before-guards.md`
-  (the earlier pre-guard live run, preserved as history). Single controlled live calls were also used to
-  verify **D22** ("general servicing" → TUNE_BASIC, ordered) and **D23** (m-1038 → needs_review), each ~500–700
-  tokens. These are real provider calls; the deterministic estimate above is **not** labelled as real spend.
-- If no real key is configured, `make eval` (deterministic) is the authoritative run and real-model spend is
-  **NOT MEASURED** — never synthesize it.
+**This is a real run, executed 2026-11-06 against OpenAI through the LiteLLM proxy. Numbers are read
+back from the DB and from LiteLLM's own accounting — nothing here is estimated or synthesized.**
+
+| Field | Value |
+|---|---|
+| Evaluation date | **2026-11-06** |
+| Model ID (backing) | **`openai/gpt-4o-mini`** |
+| Provider / proxy | OpenAI via LiteLLM proxy (per-shop virtual keys, `BUDGET_AUTHORITY=litellm`) |
+| LiteLLM alias | **`riverbend-extraction`** |
+| Messages processed | **40** |
+| Real OpenAI calls | **38** (2 messages reach an outcome before any model call: m-1009 is routed by the shop-mismatch guard; #14 is an idempotent duplicate) |
+| Work orders created (`ordered`) | **36** |
+| Clarifications (`awaiting_customer`) | **0** (the live model extracted directly on the borderline messages the golden run flags as questions) |
+| Answered (price inquiry) | **1** (m-1018) |
+| Staff review (`needs_review`) | **2** (m-1009 wrong-shop, m-1038 cancellation → D23) |
+| Duplicates (idempotent replay) | **1** (m-1003 resend, #14) |
+| Failures (model/API error or invalid output) | **0** |
+| Held (budget) | **0** |
+| Total input / output tokens | **26 004 / 2 136** (28 140 total) |
+| **Actual model spend (LiteLLM `x-litellm-response-cost`)** | **5 183 micros = $0.0052** |
+| Independent corroboration | LiteLLM `/global/spend` → **$0.005185** (matches) |
+| Total work-order value (catalog-priced in code) | **$2 014.00** |
+| Spend guard / proxy aggregate cap | $1.00 hard stop / $15 proxy cap (assignment limit $20) |
+
+Reconciliation: 36 ordered + 1 answered + 2 needs_review + 1 duplicate = **40** ✓.
+
+**Tricky cases (actual live outcomes):** prompt injection m-1024 → `ordered [CHAIN_REPLACE×1]` (injection
+ignored; code prices from catalog); resend m-1003 → `duplicate`; price inquiry m-1018 → `answered`;
+wrong-shop m-1009 → `needs_review` (guard, pre-model); delegation m-1025 → `ordered [GENERAL_INSPECT×1]`
+(guard); single-bike m-1032 → `ordered [TUNE_BASIC×1]` (bike-count guard); cancellation m-1038 →
+`needs_review` (D23). Full per-message table + model-vs-golden divergences in `docs/results-live.md`.
+
+**Classification divergences from the golden run (honest; model variance, not code defects).** On ambiguous
+messages the deterministic golden run flags as one-question follow-ups, the live `gpt-4o-mini` chose to extract
+directly (e.g. m-1013, m-1020, m-1021, m-1027 → `ordered` instead of `awaiting_customer`), and on two messages
+it selected a different-but-plausible service/quantity than the golden (m-1019 `BRAKE_ADJUST` vs golden
+`WHEEL_TRUE`; m-1033 added `CHAIN_REPLACE`). These shift the ordered/follow-up split (live 36/0 vs deterministic
+32/4) but **every code invariant held**: catalog-only pricing (I5), idempotency (m-1003), tenant isolation (I1),
+schema validation (I3), and the budget cap (I4). This is why the **deterministic** run remains authoritative for
+regression: it pins the model's interpretation so decisions/prices are reproducible.
+
+**Reproduction:**
+```
+docker compose --profile llm up -d db litellm      # proxy holds OPENAI_API_KEY; isolated LiteLLM Postgres
+EVAL_LLM_BASE_URL=http://localhost:4000/v1 make eval-live   # 40 messages, real OpenAI; writes docs/results-live.md
+```
+The harness uses an isolated Testcontainer Postgres (no app/customer data touched) and sends no customer
+email. Historical runs preserved separately: `docs/results.md` (deterministic), `docs/results-live-before-guards.md`
+(pre-guard live). If no real key is configured, `make eval` (deterministic) is authoritative and real-model
+spend is **NOT MEASURED** — never synthesized.
