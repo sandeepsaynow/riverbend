@@ -29,7 +29,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml --profile llm u
   (Docker required); **220 passing**.
 - **Submission docs:** [architecture note](docs/architecture.md) (2-page, Mermaid) ·
   [Not Built & scaling](docs/not-built.md) · [evaluation results](docs/evaluation-results.md) ·
-  [GCP deployment](docs/gcp-deployment.md) (`infra/terraform/`) · [manual test walkthrough](docs/FINAL_MANUAL_TEST.md) ·
+  [GCP deployment](docs/gcp-deployment.md) (`infra/terraform/`) · [**staging deploy report**](docs/GCP_STAGING_DEPLOYMENT_REPORT.md) (live-verified 2026-11-06) · [manual test walkthrough](docs/FINAL_MANUAL_TEST.md) ·
   [submission checklist](docs/submission-checklist.md) · decisions in [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md).
 - **Stack (actual):** Express 5 + PostgreSQL 16 (forced RLS) + **pg-boss** (Postgres queue, no Redis) +
   Better Auth + Resend + a LiteLLM proxy over OpenAI. No Next.js, no Redis.
@@ -152,7 +152,7 @@ real runs on **2026-11-06** (commit of record: the D26 upgrade commit).
 
 - **Total live evaluation cost:** $0.0307 · **cumulative measured spend (this proxy):** $0.036 · **real model calls:** 38 · under the **$20** cap.
 - **Commands:** `npx vitest run` · `npm run typecheck` · `npm run lint` · `docker compose --profile llm up -d db litellm && EVAL_LLM_BASE_URL=http://localhost:4000/v1 make eval-live`.
-- **Known limitations:** live GCP apply and a verified Resend sending domain are gated (not run); budget is a disclosed soft cap; in-browser click-through is manual. See [`docs/not-built.md`](docs/not-built.md).
+- **Known limitations:** staging is deployed + verified; the **production** LB/HA shape is Terraform-validated but not applied; a verified Resend sending domain and a live LLM-outage injection are not run; budget is a disclosed soft cap. See [`docs/not-built.md`](docs/not-built.md).
 
 ### Staff portal — human login (010)
 
@@ -277,7 +277,9 @@ reserve-then-settle **hard cap** for rollback or a shop that needs one. See [`do
   is exposed as JSON reads; cancellation routes to `needs_review`.
 - **OpenTelemetry/Phoenix tracing, the alert set, and the retention/TTL sweeper** (007) — designed, not
   wired; PII-safe ids-only logging already holds (VII).
-- **Live GCP deploy** — IaC + `terraform validate`/`plan` only; no `apply` (B2).
+- **Live GCP deploy** — **DONE on staging** (`riverbend-staging`, 2026-11-06): real customer→work-order via
+  gpt-5.4-mini, RLS isolation, budget hold+recovery, auth, durability (7/9 PASS; see
+  `docs/GCP_STAGING_DEPLOYMENT_REPORT.md`). The **production** LB+domain+HA shape is Terraform-validated, not applied.
 
 ## What breaks first at 100 shops
 

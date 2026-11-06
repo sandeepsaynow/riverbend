@@ -11,12 +11,12 @@ resource "google_sql_database_instance" "pg" {
   name                = "riverbend-pg"
   database_version    = "POSTGRES_16"
   region              = var.region
-  deletion_protection = true
+  deletion_protection = var.db_deletion_protection
   depends_on          = [google_project_service.enabled]
 
   settings {
     tier              = var.db_tier
-    availability_type = "REGIONAL" # HA standby
+    availability_type = var.db_availability_type # REGIONAL (HA) in prod; ZONAL for staging
     backup_configuration {
       enabled                        = true
       point_in_time_recovery_enabled = true
@@ -60,7 +60,7 @@ resource "google_secret_manager_secret" "app" {
 # Each runtime SA may read only the secrets it needs (least privilege).
 locals {
   api_secrets     = ["admin-bootstrap-token", "database-url", "database-admin-url", "database-migrator-url", "web-form-signing-key", "email-signing-key", "resend-webhook-secret"]
-  worker_secrets  = ["database-url", "database-admin-url", "database-migrator-url", "email-signing-key", "resend-api-key"]
+  worker_secrets  = ["database-url", "database-admin-url", "database-migrator-url", "email-signing-key", "resend-api-key", "admin-bootstrap-token", "litellm-master-key"]
   litellm_secrets = ["litellm-master-key", "openai-api-key"]
 }
 

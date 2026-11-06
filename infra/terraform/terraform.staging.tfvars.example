@@ -1,0 +1,32 @@
+# STAGING profile — conservative sizes, minimal scaling, disposable. Copy to terraform.staging.tfvars and
+# fill project_id/domain/images. No secret VALUES here (those go into Secret Manager out-of-band).
+#
+#   terraform plan  -var-file=terraform.staging.tfvars -out tf.plan
+#   terraform apply tf.plan         # only after explicit approval
+#
+# Teardown is cheap because deletion protection is off and the DB is zonal (see cleanup in gcp-deployment.md).
+
+# >>> Use a DEDICATED, EMPTY project — never an unrelated/production project. <<<
+project_id    = "riverbend-staging"           # create a fresh project for this
+region        = "us-central1"
+domain        = "staging.intake.example.com"  # managed cert needs a real DNS A record post-apply
+github_repo   = "your-org/riverbend"
+
+# Images (digest-pinned). Build + push to Artifact Registry BEFORE apply.
+image_api     = "us-central1-docker.pkg.dev/riverbend-staging/riverbend/app@sha256:REPLACE"
+image_worker  = "us-central1-docker.pkg.dev/riverbend-staging/riverbend/app@sha256:REPLACE"   # same image, start:worker command
+litellm_image = "us-central1-docker.pkg.dev/riverbend-staging/riverbend/litellm@sha256:REPLACE" # built from infra/litellm/Dockerfile (NOT stock berriai)
+
+# --- Cost knobs: small + disposable -------------------------------------------------------------
+db_tier                = "db-custom-1-3840"   # 1 vCPU / 3.75 GB (vs prod db-custom-2-7680)
+db_availability_type   = "ZONAL"              # no HA standby (vs REGIONAL) — ~half the SQL cost
+db_deletion_protection = false                # allow `terraform destroy` to remove the instance
+api_min_instances      = 0                    # scale to zero when idle (cold start acceptable for staging)
+api_max_instances      = 2
+litellm_min_instances  = 0                    # scale to zero when idle
+litellm_max_instances  = 1
+worker_min_instances   = 1                    # queue consumer must stay up to process jobs during tests
+
+# Email: leave outbound on Resend's sandbox sender until a sending domain is verified.
+resend_from         = "Riverbend Cycles <onboarding@resend.dev>"
+resend_reply_domain = "riverbend.example"

@@ -30,6 +30,44 @@ variable "db_tier" {
   default     = "db-custom-2-7680"
 }
 
+# Cost/HA knobs (prod-safe defaults; a staging tfvars lowers these). Keeping prod defaults here means an
+# existing prod plan is byte-for-byte unchanged, while staging can run small, zonal, and deletable.
+variable "db_availability_type" {
+  type        = string
+  description = "Cloud SQL availability: REGIONAL (HA, prod) or ZONAL (single-zone, cheaper staging)."
+  default     = "REGIONAL"
+}
+
+variable "db_deletion_protection" {
+  type        = bool
+  description = "Block `terraform destroy` from deleting the SQL instance. true in prod; false for disposable staging."
+  default     = true
+}
+
+variable "api_min_instances" {
+  type        = number
+  description = "api Cloud Run minimum instances. 1 keeps it warm (prod); 0 scales to zero (cheap staging)."
+  default     = 1
+}
+
+variable "api_max_instances" {
+  type        = number
+  description = "api Cloud Run maximum instances."
+  default     = 10
+}
+
+variable "litellm_min_instances" {
+  type        = number
+  description = "litellm proxy minimum instances. 1 avoids cold starts (prod); 0 scales to zero (staging)."
+  default     = 1
+}
+
+variable "litellm_max_instances" {
+  type        = number
+  description = "litellm proxy maximum instances."
+  default     = 3
+}
+
 variable "github_repo" {
   type        = string
   description = "owner/repo allowed to deploy via Workload Identity Federation (no long-lived keys)."
