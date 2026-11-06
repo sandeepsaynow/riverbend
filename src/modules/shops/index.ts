@@ -96,6 +96,31 @@ export class ShopsService {
     );
     return res.rows[0]?.id ?? null;
   }
+
+  /**
+   * D31 content routing for emails to a GENERIC receiving address (one that maps to no single shop). The
+   * CODE — never the LLM — resolves the tenant: return every shop whose name is named as a whole word in the
+   * text. The caller routes ONLY when exactly one shop matches; 0 or >1 is ambiguous and must not be guessed.
+   * Cross-shop admin read (tenant not yet known); deterministic; no side effects.
+   */
+  async resolveShopByContent(text: string): Promise<string[]> {
+    if (!text || !text.trim()) return [];
+    const res = await this.db.adminQuery<{ id: string; slug: string; display_name: string }>(
+      `SELECT id, slug, display_name FROM shops`,
+    );
+    const out = new Set<string>();
+    for (const s of res.rows) {
+      const tokens = [s.slug.replace(/^rb-/i, ''), (s.display_name ?? '').replace(/^rb-/i, '')]
+        .map((t) => t.trim().toLowerCase())
+        .filter((t) => t.length >= 3);
+      const named = tokens.some((t) => {
+        const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`\\b${esc}\\b`, 'i').test(text);
+      });
+      if (named) out.add(s.id);
+    }
+    return [...out];
+  }
 }
 
 export class InvalidSlug extends Error {

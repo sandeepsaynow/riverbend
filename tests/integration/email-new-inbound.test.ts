@@ -43,7 +43,10 @@ beforeAll(async () => {
   t = await startTestDb();
   shops = new ShopsService(t.db);
   email = new EmailService(t.db, CFG, {
-    router: { resolveShopByInboundAddress: (a) => shops.resolveByInboundAddress(a) },
+    router: {
+      resolveShopByInboundAddress: (a) => shops.resolveByInboundAddress(a),
+      resolveShopByContent: (text) => shops.resolveShopByContent(text),
+    },
     intake: new IntakeService(t.db),
   });
 }, 180_000);
@@ -132,5 +135,35 @@ describe('006/D25 new inbound email → new request', () => {
       `SELECT m.source, m.content FROM requests rq JOIN messages m ON m.id=rq.message_id WHERE m.shop_id=$1`, [shop]);
     expect(row.rows[0]!.source).toBe('email');
     expect(row.rows[0]!.content).toContain('wobbly');
+  });
+});
+
+describe('006/D31 generic-address email → content-based tenant routing (code-validated, never LLM)', () => {
+  it('a generic recipient + body naming exactly one shop → routed to THAT shop', async () => {
+    const dt = await shops.createShop({ slug: 'rb-downtown', timeZone: 'America/Chicago' });
+    const ns = await shops.createShop({ slug: 'rb-northside', timeZone: 'America/Chicago' });
+    // recipient is a generic/catch-all address that maps to no shop; the body names "Northside"
+    const mail = { providerMessageId: '<d31-1@mail>', toAddress: 'hello@karoiechou.resend.app', toAddresses: ['hello@karoiechou.resend.app'], text: 'Hi, I need a flat tire repaired at Northside please.', from: 'alex@gmail.com' };
+    expect(await email.handleInbound(mail)).toBe('accepted');
+    expect(await requestCount(ns.id)).toBe(1); // routed to Northside by content
+    expect(await requestCount(dt.id)).toBe(0); // NOT the other shop
+  });
+
+  it('a generic recipient with NO shop named → unmatched (safe park, no tenant assigned)', async () => {
+    const mail = { providerMessageId: '<d31-2@mail>', toAddress: 'hello@karoiechou.resend.app', toAddresses: ['hello@karoiechou.resend.app'], text: 'My bike needs a tune-up, can you help?', from: 'alex@gmail.com' };
+    expect(await email.handleInbound(mail)).toBe('unmatched');
+  });
+
+  it('a generic recipient naming TWO shops → ambiguous → unmatched (never guessed)', async () => {
+    const mail = { providerMessageId: '<d31-3@mail>', toAddress: 'hello@karoiechou.resend.app', toAddresses: ['hello@karoiechou.resend.app'], text: 'Should I go to Downtown or Northside for a flat fix?', from: 'alex@gmail.com' };
+    expect(await email.handleInbound(mail)).toBe('unmatched');
+  });
+
+  it('a shop-specific recipient address is authoritative even if the body names another shop', async () => {
+    const dt2 = await shops.createShop({ slug: 'rb-downtown-x', timeZone: 'America/Chicago' });
+    await shops.setInboundAddress('rb-downtown-x', 'rb-downtown-x@karoiechou.resend.app');
+    const mail = { providerMessageId: '<d31-4@mail>', toAddress: 'rb-downtown-x@karoiechou.resend.app', toAddresses: ['rb-downtown-x@karoiechou.resend.app'], text: 'Flat tire — I usually go to Northside but sending here.', from: 'alex@gmail.com' };
+    expect(await email.handleInbound(mail)).toBe('accepted');
+    expect(await requestCount(dt2.id)).toBe(1); // routed by the trusted recipient address, not the body
   });
 });

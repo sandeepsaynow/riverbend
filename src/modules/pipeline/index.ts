@@ -60,30 +60,40 @@ export class PipelineService {
     const period = this.period();
 
     const loaded = await this.db.withTenant(shopId, (c) =>
-      c.query<{ state: string; content: string }>(
-        `SELECT r.state, m.content FROM requests r JOIN messages m ON m.id = r.message_id WHERE r.id = $1`,
+      c.query<{ state: string; content: string; source: string }>(
+        `SELECT r.state, m.content, m.source FROM requests r JOIN messages m ON m.id = r.message_id WHERE r.id = $1`,
         [requestId],
       ),
     );
     const row = loaded.rows[0];
     if (!row || TERMINAL.has(row.state)) return; // unknown or already decided (idempotent)
 
-    // Shop-mismatch guard (m-1009): if the message explicitly addresses a DIFFERENT Riverbend shop,
-    // route to needs_review before any model call — never create an order, never transfer tenants.
+    // Follow-up context (alreadyAsked + the reply text, if any) — needed by the mismatch guard too.
+    const fu = await this.db.withTenant(shopId, (c) =>
+      c.query<{ reply_content: string | null }>(`SELECT reply_content FROM follow_ups WHERE request_id = $1`, [requestId]),
+    );
+    const alreadyAsked = fu.rows.length > 0;
+
+    // Shop-mismatch guard (m-1009 / D31): if the message explicitly addresses a DIFFERENT Riverbend shop,
+    // act BEFORE any model call — never create an order, never transfer tenants. For a WEB form the origin
+    // shop is authoritative, so on the first pass we ASK the customer to confirm and keep the request pending
+    // (awaiting_customer). A second unresolved round, or any non-web channel, routes to a human (needs_review)
+    // for an authorized transfer or a new request.
     const shopRow = await this.db.withTenant(shopId, (c) => c.query<{ slug: string }>(`SELECT slug FROM shops WHERE id = $1`, [shopId]));
     const allShops = await this.db.adminQuery<{ slug: string }>(`SELECT slug FROM shops`);
     const currentToken = shopToken(shopRow.rows[0]?.slug ?? '');
     const allTokens = allShops.rows.map((s) => shopToken(s.slug));
     if (detectShopMismatch(row.content, currentToken, allTokens)) {
+      if (row.source === 'web' && !alreadyAsked) {
+        await this.insertFollowUp(shopId, requestId,
+          'Your message mentions a different Riverbend location than the one you submitted through. ' +
+          "We won't start any work until you confirm — just reply to let us know whether to handle this here or at the other shop.");
+        await this.setState(shopId, requestId, 'awaiting_customer');
+        return;
+      }
       await this.setStateWithError(shopId, requestId, 'needs_review', 'wrong_shop_suspected');
       return;
     }
-
-    // Follow-up context (alreadyAsked + the reply text, if any).
-    const fu = await this.db.withTenant(shopId, (c) =>
-      c.query<{ reply_content: string | null }>(`SELECT reply_content FROM follow_ups WHERE request_id = $1`, [requestId]),
-    );
-    const alreadyAsked = fu.rows.length > 0;
     let content = row.content;
     const hasReply = alreadyAsked && !!fu.rows[0]!.reply_content;
     if (hasReply) content = `${content}\n${fu.rows[0]!.reply_content}`;
@@ -174,7 +184,7 @@ export class PipelineService {
       extraction = { ...extraction, bikes: [extraction.bikes[0]!] };
     }
 
-    const decision = decide(extraction, alreadyAsked);
+    const decision = decide(extraction, alreadyAsked, row.source);
     const flagged = decision.outcome === 'extracted' && decision.flagged;
     const bikes = flagged
       ? [{ bikeNumber: 1, issues: extraction.bikes.flatMap((b) => b.issues), serviceCodes: ['GENERAL_INSPECT'] }]

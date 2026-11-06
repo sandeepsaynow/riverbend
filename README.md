@@ -128,6 +128,21 @@ list senders are suppressed (parked `needs_review`) to avoid bounce loops; repli
 **Only one environment should poll** the shared Resend inbox at a time (`RESEND_POLLING_ENABLED=false` on the
 other). To send a test email you need a verified Resend sending domain (sandbox only sends to the account owner).
 
+**Source-aware tenant routing (D31).** Code — never the LLM — assigns the tenant:
+- **Web form:** the shop whose form it came through is **authoritative**. If the text names a *different* shop,
+  the customer is emailed a confirmation and the request stays **pending** (no order, no silent tenant move);
+  unresolved → `needs_review`.
+- **Email to a shop-specific address** (`rb-downtown@…`): authoritative by recipient; the body is never used
+  for routing.
+- **Email to a generic address** (e.g. `sandeepsudhagani@karoiechou.resend.app`): routed by **content** —
+  "flat tire repaired at **Northside**" → Northside. Resolved deterministically in code and validated against
+  the three shops; **exactly one** named shop routes, zero/ambiguous is safely parked (never guessed).
+- **Replies** keep their established shop (signed `reply+<token>`); content never re-routes a conversation.
+
+Verified: web-mismatch, generic-explicit-shop, missing-shop, ambiguous-shop, shop-specific-address, and
+duplicate delivery are covered by real-Postgres integration tests; the real received email ("…to Downtown")
+resolves to rb-downtown live.
+
 This exercises the **real Resend provider API** (list + retrieve); it is provider-API integration testing,
 distinct from complete customer-email delivery (which needs a verified sending domain). See
 `specs/006-email/quickstart.md`.

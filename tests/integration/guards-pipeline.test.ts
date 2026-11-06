@@ -29,6 +29,10 @@ async function createShop(slug: string): Promise<string> {
 async function submit(shopId: string, content: string): Promise<string> {
   return (await intake.submit({ shopId, source: 'api', submissionId: `g-${++n}`, content })).requestId;
 }
+async function submitWeb(shopId: string, content: string): Promise<string> {
+  return (await intake.submit({ shopId, source: 'web', submissionId: `gw-${++n}`, content, customerEmail: 'rider@example.com' })).requestId;
+}
+const followUp = (id: string) => t.db.adminQuery<{ question: string }>(`SELECT question FROM follow_ups WHERE request_id=$1`, [id]).then((r) => r.rows[0] ?? null);
 const state = (id: string) => t.db.adminQuery<{ state: string; last_error: string | null }>(`SELECT state, last_error FROM requests WHERE id=$1`, [id]).then((r) => r.rows[0]!);
 async function items(id: string) {
   const r = await t.db.adminQuery<{ code: string; quantity: number; line_total_cents: number }>(
@@ -78,6 +82,22 @@ describe('correctness guards (end-to-end)', () => {
     expect(s.last_error).toBe('wrong_shop_suspected');
     expect(gw.calls).toBe(0); // short-circuited before any model call
     expect(await orderCount(id)).toBe(0);
+  });
+
+  it('D31: a WEB-form mismatch asks the customer to confirm and stays pending (no order, no tenant move)', async () => {
+    const id = await submitWeb(downtown, 'Hi Lakeshore team! Can you tune my road bike? Sunday works.');
+    const { p, gw } = pipe({ kind: 'repair', bikes: [{ bikeNumber: 1, issues: ['tune'], serviceCodes: ['TUNE_BASIC'] }], urgency: 'normal', dateWords: null, questionDraft: null });
+    await p.run({ requestId: id, shopId: downtown });
+    await orders.createFromExtraction(downtown, id);
+    const s = await state(id);
+    expect(s.state).toBe('awaiting_customer'); // pending on customer confirmation, NOT needs_review
+    expect(gw.calls).toBe(0); // deterministic guard, no model call
+    expect(await orderCount(id)).toBe(0); // no work order until resolved
+    const fu = await followUp(id);
+    expect(fu?.question).toMatch(/different Riverbend location|confirm/i); // confirmation question queued
+    // The request stays under Downtown (origin) — never silently moved to Lakeshore.
+    const owner = await t.db.adminQuery<{ shop_id: string }>(`SELECT m.shop_id FROM requests r JOIN messages m ON m.id=r.message_id WHERE r.id=$1`, [id]);
+    expect(owner.rows[0]!.shop_id).toBe(downtown);
   });
 
   it('m-1032: single-bike message but model returns two → trimmed to one order', async () => {

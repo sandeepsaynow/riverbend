@@ -100,7 +100,10 @@ async function main(): Promise<void> {
         // New-inbound intake (D25): resolve a verified destination address → shop, then submit a new
         // request. Only wired in the worker (where inbound is drained); the API process stays reply-only.
         {
-          router: { resolveShopByInboundAddress: (addr) => shops.resolveByInboundAddress(addr) },
+          router: {
+            resolveShopByInboundAddress: (addr) => shops.resolveByInboundAddress(addr),
+            resolveShopByContent: (text) => shops.resolveShopByContent(text), // D31 generic-address routing
+          },
           intake,
         },
       )

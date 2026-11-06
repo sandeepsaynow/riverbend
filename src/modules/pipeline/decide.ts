@@ -29,8 +29,23 @@ export function gateQuestion(draft: string | null | undefined): string {
  * this does. `alreadyAsked` is true when the single follow-up has already been asked (i.e. this is the
  * resume after the customer's one reply).
  */
-export function decide(ex: Extraction, alreadyAsked: boolean): Decision {
-  if (ex.kind === 'wrong_shop') return { outcome: 'needs_review', reason: 'wrong_shop_suspected' };
+export function decide(ex: Extraction, alreadyAsked: boolean, source?: string): Decision {
+  // Wrong-shop (D31): the message names a DIFFERENT shop than the one it came in through. For a WEB form the
+  // origin shop is authoritative, so we never silently move tenants — instead ask the customer to confirm and
+  // keep the request pending (no work order) until they reply. A second unresolved round, or any non-web
+  // channel, routes to a human (needs_review) for an authorized transfer or a new request.
+  if (ex.kind === 'wrong_shop') {
+    if (source === 'web' && !alreadyAsked) {
+      return {
+        outcome: 'ask',
+        question:
+          'Your message mentions a different Riverbend location than the one you submitted through. ' +
+          "We won't start any work until you confirm — just reply to let us know whether to handle this here " +
+          'or at the other shop.',
+      };
+    }
+    return { outcome: 'needs_review', reason: 'wrong_shop_suspected' };
+  }
   // Cancellation/change of an existing order (D23): a human verifies ownership — we NEVER auto-cancel,
   // never create a work order, and never send a repair clarification. Order ownership is never inferred
   // from email or message similarity; routed to needs_review for a person to handle.

@@ -39,6 +39,8 @@ export interface InboundEmail {
 /** Resolve a VERIFIED destination address to a shop id (D25). Backed by `shops.inbound_address`. */
 export interface ShopRouter {
   resolveShopByInboundAddress(address: string): Promise<string | null>;
+  /** D31: resolve the tenant from the email body when the recipient is a GENERIC address (no shop mapped). */
+  resolveShopByContent?(text: string): Promise<string[]>;
 }
 /** Narrow intake port for creating a NEW request from an inbound email (D25). Satisfied by IntakeService. */
 export interface NewInboundSink {
@@ -371,11 +373,24 @@ export class EmailService {
       const sid = await this.router.resolveShopByInboundAddress(addr);
       if (sid) shopIds.add(sid);
     }
-    if (shopIds.size !== 1) return 'unmatched'; // unknown or ambiguous (0 or >1 shops) → safe ignore
-    const shopId = [...shopIds][0]!;
+    if (shopIds.size > 1) return 'unmatched'; // addressed to multiple shop mailboxes → ambiguous, safe ignore
 
     const body = normalizeBody(input.text, input.html).slice(0, MAX_INTAKE_CHARS);
     if (!body) return 'unmatched'; // empty/whitespace email → nothing to extract
+
+    let shopId: string;
+    if (shopIds.size === 1) {
+      // A shop-specific recipient address is AUTHORITATIVE — the body is never used for routing (FR-013).
+      shopId = [...shopIds][0]!;
+    } else {
+      // D31: a GENERIC recipient (maps to no shop, e.g. a catch-all/account address) → resolve the tenant
+      // from the body, deterministically in CODE (the LLM never assigns a tenant). Route ONLY on exactly one
+      // named shop; 0 or >1 is missing/ambiguous and is safely parked (never guessed, never cross-tenant).
+      if (!this.router.resolveShopByContent) return 'unmatched';
+      const matched = await this.router.resolveShopByContent(body);
+      if (matched.length !== 1) return 'unmatched'; // missing or ambiguous shop → safe park (no tenant assigned)
+      shopId = matched[0]!;
+    }
 
     const res = await this.intake.submit({
       shopId,

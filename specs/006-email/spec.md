@@ -140,3 +140,30 @@ Mailpit sink is retired). Email is a side effect owned by **code**, behind an `E
   documented future enhancement; the sender-address guard covers the common loop/bounce vectors today.
 - **FR-021 Single poller.** The Resend receiving inbox is account-wide, so only ONE environment should poll it
   (local and GCP share the account). For a controlled test, disable the other (`RESEND_POLLING_ENABLED=false`).
+
+## New requirements (D31, 2026-11-06) — source-aware tenant routing
+
+> **AMENDMENT 2026-11-06 (D31).** Routing is source-aware and the **LLM never assigns `tenant_id`** — code
+> resolves the tenant deterministically after validating against the three configured shops.
+
+- **FR-022 Web origin is authoritative.** A web-form request belongs to the shop whose form it came through,
+  regardless of shop names in the text. If the text addresses a DIFFERENT shop (deterministic mismatch guard),
+  the request is **not** moved and **no** work order is created: on the first pass the customer is emailed a
+  confirmation question and the request is parked `awaiting_customer` (pending). A second unresolved round, or
+  any non-web channel, → `needs_review` (`wrong_shop_suspected`) for an authorized transfer or a new request.
+  Tenants are never silently moved.
+- **FR-023 Email shop resolution (recipient first, then content).** A **shop-specific** recipient address
+  (`rb-downtown@…`) is authoritative — the body is never used for routing (FR-013). A **generic** recipient
+  (maps to no shop, e.g. a catch-all/account address) is routed by `ShopsService.resolveShopByContent`, which
+  returns every shop named as a whole word in the body; the worker routes **only when exactly one** shop
+  matches. Example: a generic email saying "flat tire repaired at Northside" → Northside. The match is in
+  CODE (regex word-boundary against the shop slug/display-name), validated against the three shops; the LLM is
+  used for service extraction only, never to pick the tenant.
+- **FR-024 Missing/ambiguous shop.** A generic email naming zero or more-than-one shop is **safely parked**
+  (`unmatched`) — never guessed, never attributed cross-tenant. (Auto-asking a shop-clarification for a fully
+  unrouted email, and resuming on reply, needs a no-tenant outbound path and is a documented future
+  enhancement; today such mail is parked for human triage rather than dropped.)
+- **FR-025 Established tenant sticks.** A reply correlated by a signed `reply+<token>` retains its original
+  shop; content never re-routes an existing conversation. Idempotency (Message-ID), duplicate protection,
+  per-shop LiteLLM budgets, reply-safety (FR-020) and RLS are all preserved; routing resolution uses the
+  cross-tenant admin read only to pick the shop, then intake runs tenant-scoped under it.
